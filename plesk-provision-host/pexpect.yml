@@ -1,0 +1,23 @@
+---
+- name: Manage new instances
+  hosts: rose
+  connection: ssh
+  become: True
+
+  tasks:
+   - name: Create directory to hold scripts
+     shell: sudo mkdir -p /usr/local/src/ansible-scripts
+
+   - name: Copy pexpect 3.3 package tar file
+     copy:
+       src: /usr/local/src/ansible-scripts/pexpect-3.3.tar.gz
+       dest: /usr/local/src/ansible-scripts
+
+   - name: Install pexpect 3.3
+     shell: cd /usr/local/src/ansible-scripts; tar -xvf pexpect-3.3.tar.gz; cd pexpect-3.3; /usr/bin/python setup.py install;
+
+   - name: Set root password
+     expect:
+       command: passwd root
+       responses:
+         (?i)password: 191315@All

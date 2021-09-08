@@ -1,0 +1,6 @@
+---
+- name: Install Letsencrypt autossl provider
+  shell: /scripts/install_lets_encrypt_autossl_provider
+
+- name: Set Letsencrypt as default provider in autossl
+  shell: whmapi1 set_autossl_provider provider=LetsEncrypt x_terms_of_service_accepted=https://letsencrypt.org/documents/LE-SA-v1.2-November-15-2017.pdf

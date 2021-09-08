@@ -1,0 +1,9 @@
+- name: Create an instance
+  hosts: merida
+  connection: ssh
+  become: true
+ 
+  tasks:
+
+   - name: Install CloudLinux Alt-Packages for PHP 7.3 and PHP 7.4 Only
+     shell: yum install alt-php73* alt-php74* -y

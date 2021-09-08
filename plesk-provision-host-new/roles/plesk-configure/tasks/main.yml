@@ -1,0 +1,175 @@
+---
+
+- name: Download Plesk license file
+  get_url: url={{plesk_license_url}} dest=/root/plsk-license.xml mode=0644
+  when: plesk_license_url is defined
+  ignore_errors: true
+
+- name: Install Plesk License from File
+  command: plesk bin license --install /root/plsk-license.xml
+  when: plesk_license_url is defined
+  ignore_errors: true
+
+- name: Load credentials.yml with auth data
+  include_vars:
+    file: group_vars/credentials.yml
+    name: auth
+
+- name: Initialize Plesk
+  shell: (plesk bin init_conf --check-configured || plesk bin init_conf --init -passwd "{{auth.plesk_admin_password}}" -admin_info_not_required true -ip-type shared -license_agreed true -email auto.emails+ssl@hostgrid.com -company HostGrid  -address "Larch House, Parklands Business Park" -city Denmead -state Hampshire -zip "PO7 6XP" -country GB)
+  when: label == "hostgrid"
+
+- name: Initialize Plesk
+  shell: (plesk bin init_conf --check-configured || plesk bin init_conf --init -passwd "{{auth.plesk_admin_password}}" -admin_info_not_required true -ip-type shared -license_agreed true -email auto.emails+ssl@hostgrid.com -company HostPlus  -address "Larch House, Parklands Business Park" -city Denmead -state Hampshire -zip "PO7 6XP" -country GB)
+  when: label == "hostplus"
+
+- name: Initialize Plesk
+  shell: (plesk bin init_conf --check-configured || plesk bin init_conf --init -passwd "{{auth.plesk_admin_password}}" -admin_info_not_required true -ip-type shared -license_agreed true -email auto.emails+ssl@hostgrid.com -company SiteCreator  -address "Larch House, Parklands Business Park" -city Denmead -state Hampshire -zip "PO7 6XP" -country GB)
+  when: label == "sitecreator"
+
+- name: Set Admin password
+  shell: plesk bin admin --set-password -passwd 'jH@ermP$5V@2T'
+
+- name: Install PHP versions php8.0, php7.3, php7.4
+  shell: plesk installer add --components php8.0 php7.3 php7.4
+
+- name: Create service plans standard and premium with default values for HostGrid brand
+  shell: plesk bin service_plan -c "standard" -hosting true; plesk bin service_plan -c "premium" -hosting true
+  when: label == "hostgrid"
+
+- name: Create service plans standard and premium with default values for HostPlus brand
+  shell: plesk bin service_plan -c "standard" -hosting true; plesk bin service_plan -c "premium" -hosting true
+  when: label == "hostplus"
+
+- name: Create service plans standard, professional and ecommerce with default values for Sitecreator brand
+  shell: plesk bin service_plan -c "standard" -hosting true; plesk bin service_plan -c "professional" -hosting true; plesk bin service_plan -c "ecommerce" -hosting true;
+  when: label == "sitecreator"
+
+- name: Enable PHP support for custom service plans standard and premium for HostGrid brand
+  shell: plesk bin service_plan -u "standard" -php true; plesk bin service_plan -u "premium" -php true;
+  when: label == "hostgrid"
+
+- name: Enable PHP support for custom service plans standard and premium for HostPlus brand
+  shell: plesk bin service_plan -u "standard" -php true; plesk bin service_plan -u "premium" -php true;
+  when: label == "hostplus"
+
+- name: Enable PHP support for custom service plans standard, professional and ecommerce for SiteCreator brand
+  shell: plesk bin service_plan -u "standard" -php true; plesk bin service_plan -u "professional" -php true; plesk bin service_plan -u "ecommerce" -php true;
+  when: label == "sitecreator"
+
+- name: Set native PHP version to PHP8.0 for all the service plans for HostGrid brand
+  shell: plesk bin service_plan -u "Default Domain" -php_handler_id plesk-php80-fpm; plesk bin service_plan -u "Default Simple" -php_handler_id plesk-php80-fpm; plesk bin service_plan -u "Unlimited" -php_handler_id plesk-php80-fpm; plesk bin service_plan -u "standard" -php_handler_id plesk-php80-fpm; plesk bin service_plan -u "premium" -php_handler_id plesk-php80-fpm;
+  when: label == "hostgrid"
+
+- name: Set native PHP version to PHP8.0 for all the service plans for Hostplus brand
+  shell: plesk bin service_plan -u "Default Domain" -php_handler_id plesk-php80-fpm; plesk bin service_plan -u "Default Simple" -php_handler_id plesk-php80-fpm; plesk bin service_plan -u "Unlimited" -php_handler_id plesk-php80-fpm; plesk bin service_plan -u "standard" -php_handler_id plesk-php80-fpm; plesk bin service_plan -u "premium" -php_handler_id plesk-php80-fpm;
+  when: label == "hostplus"
+
+- name: Set native PHP version to PHP8.0 for all the service plans for SiteCreator brand
+  shell: plesk bin service_plan -u "Default Domain" -php_handler_id plesk-php80-fpm; plesk bin service_plan -u "Default Simple" -php_handler_id plesk-php80-fpm; plesk bin service_plan -u "Unlimited" -php_handler_id plesk-php80-fpm; plesk bin service_plan -u "standard" -php_handler_id plesk-php80-fpm; plesk bin service_plan -u "professional" -php_handler_id plesk-php80-fpm; plesk bin service_plan -u "ecommerce" -php_handler_id plesk-php80-fpm;
+  when: label == "sitecreator"
+
+- name: Set default php8.0 for command line
+  shell: ln -s /opt/plesk/php/8.0/bin/php /usr/bin/php; ln -s /opt/plesk/php/8.0/bin/php-cgi /usr/bin/php-cgi; ln -s /opt/plesk/php/8.0/sbin/php-fpm /sbin/php-fpm; /usr/local/psa/admin/bin/php_handlers_control --reread; /usr/local/psa/admin/sbin/httpdmng --reconfigure-all; service httpd restart;
+
+- name: Remove bind, roundcube, postfix and dovecot components
+  shell: plesk installer remove --components bind roundcube postfix dovecot;
+
+- name: Install component plesk migrator
+  shell: plesk installer --select-release-current --install-component pmm;
+
+- name: Set index.php as top priority
+  shell: cp /usr/local/psa/admin/conf/panel.ini.sample /usr/local/psa/admin/conf/panel.ini
+
+- name: Add entry for index.php priority
+  shell: sed -i '$ a [webserver]' /usr/local/psa/admin/conf/panel.ini
+
+- name: Add entry for index.php priority
+  shell: sed -i '$ a directoryIndex = "index.php index.html index.cgi index.pl index.xhtml index.htm index.shtml"' /usr/local/psa/admin/conf/panel.ini
+
+- name: Enable "Keep websites secure with free SSL/TLS certificates" in all the service plans for HostGrid brand
+  shell: plesk bin service_plan --add-custom-plan-item "Default Domain" -custom-plan-item-name "urn:ext:sslit:plan-item-sdk:keep-secured"; plesk bin service_plan --add-custom-plan-item "standard" -custom-plan-item-name "urn:ext:sslit:plan-item-sdk:keep-secured"; plesk bin service_plan --add-custom-plan-item "Default Simple" -custom-plan-item-name "urn:ext:sslit:plan-item-sdk:keep-secured"; plesk bin service_plan --add-custom-plan-item "premium" -custom-plan-item-name "urn:ext:sslit:plan-item-sdk:keep-secured"; plesk bin service_plan --add-custom-plan-item "Unlimited" -custom-plan-item-name "urn:ext:sslit:plan-item-sdk:keep-secured";
+  when: label == "hostgrid"
+
+- name: Enable "Keep websites secure with free SSL/TLS certificates" in all the service plans for HostPlus brand
+  shell: plesk bin service_plan --add-custom-plan-item "Default Domain" -custom-plan-item-name "urn:ext:sslit:plan-item-sdk:keep-secured"; plesk bin service_plan --add-custom-plan-item "standard" -custom-plan-item-name "urn:ext:sslit:plan-item-sdk:keep-secured"; plesk bin service_plan --add-custom-plan-item "Default Simple" -custom-plan-item-name "urn:ext:sslit:plan-item-sdk:keep-secured"; plesk bin service_plan --add-custom-plan-item "premium" -custom-plan-item-name "urn:ext:sslit:plan-item-sdk:keep-secured"; plesk bin service_plan --add-custom-plan-item "Unlimited" -custom-plan-item-name "urn:ext:sslit:plan-item-sdk:keep-secured";
+  when: label == "hostplus"
+
+- name: Enable "Keep websites secure with free SSL/TLS certificates" in all the service plans for Sitecreator brand
+  shell: plesk bin service_plan --add-custom-plan-item "Default Domain" -custom-plan-item-name "urn:ext:sslit:plan-item-sdk:keep-secured"; plesk bin service_plan --add-custom-plan-item "standard" -custom-plan-item-name "urn:ext:sslit:plan-item-sdk:keep-secured"; plesk bin service_plan --add-custom-plan-item "Default Simple" -custom-plan-item-name "urn:ext:sslit:plan-item-sdk:keep-secured"; plesk bin service_plan --add-custom-plan-item "professional" -custom-plan-item-name "urn:ext:sslit:plan-item-sdk:keep-secured"; plesk bin service_plan --add-custom-plan-item "Unlimited" -custom-plan-item-name "urn:ext:sslit:plan-item-sdk:keep-secured"; plesk bin service_plan --add-custom-plan-item "ecommerce" -custom-plan-item-name "urn:ext:sslit:plan-item-sdk:keep-secured";
+  when: label == "sitecreator"
+
+- name: Copy shell script to disable "Redirect with the HTTP 301 code" for alias so that they will not be redirected to the main domain URL
+  copy:
+    src: ~/265708_alias_redir_disable.sh
+    dest: /root
+
+- name: Add event handler in Plesk >> tools & settings >> event manager to execure the above script
+  shell: chmod +x /root/265708_alias_redir_disable.sh; plesk bin event_handler --create -command  "/root/265708_alias_redir_disable.sh <NEW_DOMAIN_ALIAS_NAME>" -priority 0 -user root -event domain_alias_create;
+
+- name: Enable "Allow IP address changes during a single session" from session management
+  shell: plesk db dump psa > psa.sql; mysql -uadmin -p`cat /etc/psa/.psa.shadow` psa -e "insert into misc values ('disable_check_session_ip','true')";
+
+- name: Copy shell script to issue SSL certificates for the newly added domains
+  copy:
+    src: ~/sslit.sh
+    dest: /root
+
+- name: Add event handler in Plesk >> tools & settings >> Event Manager for above script
+  shell: chmod +x /root/sslit.sh; plesk bin event_handler --create -command  "/root/sslit.sh <NEW_DOMAIN_NAME>" -priority 0 -user root -event phys_hosting_create;
+
+- name: Load credentials.yml with auth data
+  include_vars:
+    file: group_vars/credentials.yml
+    name: auth
+
+- name: Copy pexpect 3.3 package tar file
+  copy:
+    src: /home/dipaks/pexpect-3.3.tar.gz
+    dest: /home/dipaks
+
+- name: Install pexpect 3.3
+  shell: tar -xvf /home/dipaks/pexpect-3.3.tar.gz; cd /home/dipaks/pexpect-3.3; python setup.py install;
+
+- name: Set root password
+  expect:
+    command: passwd root
+    responses:
+      (?i)password: '{{auth.plesk_admin_password}}'
+
+- name: Set Password strength to strong in "Plesk CP >> Tools & Settings >> Security Policy"
+  shell: /usr/local/psa/bin/server_pref -u -min_password_strength strong
+  ignore_errors: true
+
+- name: Set database prefix to username and underscore to the beginning of database names in Plesk CP >> Database Hosting Settings
+  shell: plesk db dump psa > /root/psa_dump.sql; mysql -uadmin -p`cat /etc/psa/.psa.shadow` psa -e "replace into misc values ('force_db_prefix','true')"
+
+- name: Remove the extension "Domain Connect"
+  shell: plesk bin extension --uninstall domain-connect
+
+- name: Set time zone to Europe/London
+  shell: timedatectl set-timezone Europe/London
+
+- name: Disable webSocket from Plesk config
+  shell: sed -i '$ a [webSocket]' /usr/local/psa/admin/conf/panel.ini
+
+- name: Set webSocket enabled to false
+  shell: sed -i '$ a enabled = false' /usr/local/psa/admin/conf/panel.ini
+
+- name: Disable Let's Encrypt auto-renewal Failure/Success notifications
+  shell: plesk bin notification --update -code ext-letsencrypt-notification-certificateAutoRenewalSucceed -send2admin false -send2reseller false -send2client false; plesk bin notification --update -code ext-letsencrypt-notification-certificateAutoRenewalFailed -send2admin false -send2reseller false -send2client false
+
+- name: Disable SSLit auto-renewal Failure/Success notifications
+  shell: plesk bin notification --update -code ext-sslit-notification-certificateAutoRenewalSucceed -send2admin false -send2reseller false -send2client false; plesk bin notification --update -code ext-sslit-notification-certificateAutoRenewalFailed -send2admin false -send2reseller false -send2client false 
+
+- name: Disable Plesk notifications-Customer account creation(1),Site creation(2),APS application updates-administrator(23),APS application updates-customer(25),WordPress application updates-administrator's and WordPress application updates-customer's
+  shell: plesk bin notification --update -id 1 -send2admin false -send2reseller false -send2client false; plesk bin notification --update -id 2 -send2admin false -send2reseller false -send2client false; plesk bin notification --update -id 23 -send2admin false; plesk bin notification --update -id 25 -send2admin false -send2reseller false -send2client false; plesk bin notification --update -code ext-wp-toolkit-notification-admin_updates -send2admin false -send2reseller false -send2client false; plesk bin notification --update -code ext-wp-toolkit-notification-client_updates -send2admin false -send2reseller false -send2client false
+
+- name: Disable other plesk notifications
+  shell: plesk bin notification --update -code reseller_creation -send2admin false -send2reseller false -send2client false; plesk bin notification --update -code reseller_aps_app_updates -send2admin false -send2reseller false -send2client false; plesk bin notification --update -code admin_postponed_feedback -send2admin false; plesk bin notification --update -code ext-wp-toolkit-notification-reseller_updates -send2admin false -send2reseller false -send2client false;
+
+- name: Disable Plesk notifications
+  shell: plesk bin notification --update -code reseller_limits_exceed -send2admin false -send2reseller false -send2client false; plesk bin notification --update -code reseller_blocked -send2admin false -send2reseller false -send2client false; plesk bin notification --update -code reseller_overuse_block -send2admin false -send2reseller false -send2client false; plesk bin notification --update -code domain_exp_warning -send2admin false -send2reseller false -send2client false; plesk bin notification --update -code domain_expiration -send2admin false -send2reseller false -send2client false; plesk bin notification --update -code domain_limits_exceed -send2admin false -send2reseller false -send2client false; plesk bin notification --update -code domain_blocked -send2admin false -send2reseller false -send2client false
+
+- name: Install Speed Kit extension
+  shell: plesk bin extension --install baqend

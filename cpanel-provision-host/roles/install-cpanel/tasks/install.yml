@@ -1,0 +1,21 @@
+---
+- name: Change kernel selction screen timeout
+  shell: sed -i 's/GRUB_TIMEOUT=0/GRUB_TIMEOUT=20/g' /etc/default/grub; grub2-mkconfig -o /boot/efi/EFI/centos/grub.cfg
+
+- name: Reboot the instance
+  reboot:
+
+- name: Add MariaDB 10.3 entry prior installing cPanel
+  shell: mkdir -p /root/cpanel_profile; touch /root/cpanel_profile/cpanel.config
+
+- name: Add MariaDB 10.3 entry in /root/cpanel_profile/cpanel.config
+  shell: echo mysql-version=10.3 > /root/cpanel_profile/cpanel.config
+
+- name: Install cPanel
+  shell: cd /home && curl -o latest -L https://securedownloads.cpanel.net/latest && chmod +x latest && sh latest
+
+- name: Wait for cPanel to install...
+  wait_for:
+    path: /var/log/cpanel-install.log
+    search_regex: "Thank you for installing cPanel"
+  tags: cpanel

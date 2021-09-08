@@ -1,0 +1,22 @@
+---
+- name: Add google cloud monitoring agent repo
+  shell: curl -sSO https://dl.google.com/cloudagents/add-monitoring-agent-repo.sh; /bin/bash add-monitoring-agent-repo.sh
+
+- name: Install stackdriver-agent
+  shell: yum install -y stackdriver-agent
+
+- name: Create directory /etc/google/auth
+  shell: mkdir -p /etc/google/auth
+
+- name: Copy monitoring service account .json file
+  copy:
+    src: ~/application_default_credentials.json
+    dest: /etc/google/auth
+
+- name: Start the stackdriver-agent service
+  shell: service stackdriver-agent start; systemctl enable stackdriver-agent;
+
+- name: Check if the .json file is parsed
+  wait_for:
+    path: /var/log/messages
+    search_regex: "json credentials parsed successfully"

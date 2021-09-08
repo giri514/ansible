@@ -1,0 +1,3 @@
+---
+- name: Install site.pro website builder plugin
+  shell: cd ~ && curl -s -o spinstall https://sync.site.pro/My-Licenses/installer/eyJpZCI6Ijc1NTExNiIsInVzZXJJZCI6IjE5NDQxMDQiLCJzYWx0IjoiZDZlYmQxZjQifQ2/WHM_cPanel/siteprobuilder > /dev/null && sh spinstall

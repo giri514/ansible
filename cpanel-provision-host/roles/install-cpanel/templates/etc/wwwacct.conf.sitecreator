@@ -1,0 +1,19 @@
+HOMEDIR /home
+NS2 ns2.sitecreator.com
+NS3 ns3.sitecreator.com
+NS4 ns4.sitecreator.com
+HOMEMATCH home
+NSTTL 86400
+DEFWEBMAILTHEME paper_lantern
+CONTACTPAGER
+ADDR 
+ADDR6
+CONTACTEMAIL auto.emails+ssl@hostgrid.com
+TTL 14400
+DEFMOD paper_lantern
+NS ns1.sitecreator.com
+LOGSTYLE combined
+NS4
+HOST
+ETHDEV eth0
+SCRIPTALIAS y

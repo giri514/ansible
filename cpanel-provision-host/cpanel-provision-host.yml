@@ -1,0 +1,421 @@
+- name: List of Available Hostnames/Instance Names
+  hosts: localhost
+  tasks:
+   - name: Please choose the instance name/hostname from the below list
+     debug: msg="{{item}}"
+     with_lines: cat /etc/ansible/cpanel-provision-host/hostnames.txt
+
+- name: Create an instance
+  hosts: localhost
+  gather_facts: no
+  vars_prompt:
+   - name: Instancename
+     prompt: "Please enter the Instance name/Hostname Prefix from above list e.g. 'amber'"
+     private: no
+   - name: hostnamesuffix
+     prompt: "Please enter the suffix for hostname i.e. srv.hostgrid.com or srv.sitecreator.com or srv.hostplus.com"
+     private: no
+   - name: label
+     prompt: "Please enter the instance brand for instance labelling i.e. hostgrid-cpanel or hostplus-cpanel or sitecreator-cpanel"
+     private: no
+   - name: machinetype
+     prompt: "Please enter the machine_type e.g. n1-standard-1 [1 vCPU and 3.75 GB], etc"
+     private: no
+   - name: size_gb
+     prompt: "OS Disk Size in GB e.g 64"
+     private: no
+   - name: size_gb_customer_data
+     prompt: "Size in GB for additional disk on which customer data will be stored e.g 256"
+     private: no
+   - name: cloudlinux_key
+     prompt: "Please enter the CloudLinux License Key and in case of IP based License just press ENTER"
+     private: no
+
+  vars:
+      gcp_project: hp-ansible-automation-318010
+      gcp_cred_kind: serviceaccount
+      gcp_cred_file: /etc/ansible/auth.json
+      zone: "us-east1-b"
+      region: "us-east1"
+      diskadd: -disk1
+
+  tasks:
+   - name: create a disk
+     gcp_compute_disk:
+         name: '{{ Instancename }}'
+         size_gb: '{{ size_gb }}'
+         type: pd-ssd
+         source_image: 'projects/centos-cloud/global/images/centos-7-v20200910'
+         zone: "{{ zone }}"
+         project: "{{ gcp_project }}"
+         auth_kind: "{{ gcp_cred_kind }}"
+         service_account_file: "{{ gcp_cred_file }}"
+         scopes:
+           - https://www.googleapis.com/auth/compute
+         state: present
+     register: disk
+   - name: Create customer data disk
+     gcp_compute_disk:
+         name: "{{ Instancename }}{{ diskadd }}"
+         size_gb: '{{ size_gb_customer_data }}'
+         type: pd-ssd
+         zone: "{{ zone }}"
+         project: "{{ gcp_project }}"
+         auth_kind: "{{ gcp_cred_kind }}"
+         service_account_file: "{{ gcp_cred_file }}"
+         scopes:
+           - https://www.googleapis.com/auth/compute
+         state: present
+     register: disk1
+   - name: create a address
+     gcp_compute_address:
+         name: '{{ Instancename }}'
+         region: "{{ region }}"
+         project: "{{ gcp_project }}"
+         auth_kind: "{{ gcp_cred_kind }}"
+         service_account_file: "{{ gcp_cred_file }}"
+         scopes:
+           - https://www.googleapis.com/auth/compute
+         state: present
+     register: address
+   - name: create a instance
+     gcp_compute_instance:
+         state: present
+         name: '{{ Instancename }}'
+         machine_type: '{{ machinetype }}'
+         deletion_protection: false
+         disks:
+           - auto_delete: true
+             boot: true
+             source: "{{ disk }}"
+           - auto_delete: true
+             source: "{{ disk1 }}"
+         labels:
+           brand: '{{ label }}'
+         network_interfaces:
+           - network: null # use default
+             access_configs:
+               - name: 'External NAT'
+                 nat_ip: "{{ address }}"
+                 type: 'ONE_TO_ONE_NAT'
+         zone: "{{ zone }}"
+         project: "{{ gcp_project }}"
+         auth_kind: "{{ gcp_cred_kind }}"
+         service_account_file: "{{ gcp_cred_file }}"
+         scopes:
+           - https://www.googleapis.com/auth/compute
+     register: instance
+   - name: Add tags to instance
+     gce_tag:
+         instance_name: '{{ Instancename }}'
+         tags: cpanel-default-ports
+         zone: "{{ zone }}"
+         project_id: hp-ansible-automation-318010
+         service_account_email: ansible@hp-ansible-automation-318010.iam.gserviceaccount.com
+         pem_file: /etc/ansible/auth.json
+         state: present
+
+   - name: Wait for SSH to come up
+     wait_for: host={{ address.address }} port=22 delay=10 timeout=60
+
+   - name: Add host to groupname
+     add_host: hostname={{ address.address }} groupname=new_instances
+
+   - local_action: copy content="{{ Instancename }}" dest="/usr/local/src/ansible-tmp/cpanel-instancename.txt"
+   - local_action: copy content="{{ hostnamesuffix }}" dest="/usr/local/src/ansible-tmp/cpanel-hostnamesuffix.txt"
+   - local_action: copy content="{{ label }}" dest="/usr/local/src/ansible-tmp/label-brand.txt"
+   - local_action: copy content="{{ cloudlinux_key }}" dest="/usr/local/src/ansible-tmp/cpanel-cloudlinux-key.txt"
+
+- name: cPanel Server Setup Playbook
+  hosts: new_instances
+  connection: ssh
+  become: true
+
+  pre_tasks:
+    - name: Fail if the Operating System is not supported
+      fail:
+        msg: "cPanel installation is supported only on CentOS 6/7"
+      when: ansible_os_family != 'RedHat'
+
+  roles:
+    - { role: second-disk, tags: [second-disk] }
+    - { role: install-cpanel, tags: [cpanel] }
+    - { role: install-configserver-csf, tags: [csf], when: install_csf == 'true' }
+    - { role: install-configserver-cmc, tags: [cmc], when: install_cmc == 'true' }
+    - { role: install-configserver-cse, tags: [cse], when: install_cse == 'true' }
+    - { role: install-letsencrypt, tags: [letsencrypt], when: install_letsencrypt == 'true' }
+    - { role: install-zabbix, tags: [zabbix], when: install_zabbix  == 'true' }
+    - { role: move-mysql, tags: [move-mysql] }
+    - { role: install-site.pro-plugin, tags: [install-site.pro-plugin] }
+    - { role: install-clamav, tags: [install-clamav] }
+    - { role: optimize-settings, tags: [optimize-settings] }
+    - { role: install-cloudlinux, tags: [cloudlinux] }
+    - { role: install-cloudlinux-cagefs, tags: [cloudlinux] }
+    - { role: install-cloudlinux-alt-packages, tags: [cloudlinux] }
+#    - { role: install-mysql-governor, tags: [cloudlinux] }
+    - { role: install-kernelcare, tags: [install-kernelcare] }
+    - { role: install-imunify, tags: [install-imunify] }
+    - { role: google-monitoring-agent, tags: [google-monitoring-agent] }
+
+  vars:
+    Instancename: "{{ lookup('file', '/usr/local/src/ansible-tmp/cpanel-instancename.txt') }}"
+    hostnamesuffix: "{{ lookup('file', '/usr/local/src/ansible-tmp/cpanel-hostnamesuffix.txt') }}"
+    label: "{{ lookup('file', '/usr/local/src/ansible-tmp/label-brand.txt') }}"
+    cloudlinux_key: "{{ lookup('file', '/usr/local/src/ansible-tmp/cpanel-cloudlinux-key.txt') }}"
+  tasks:
+
+    - name: Create suspended page directory
+      shell: mkdir -p /var/cpanel/webtemplates/root/english; mkdir -p /root/cpanel3-skel; mkdir -p /root/cpanel3-skel/public_html;
+      ignore_errors: true
+
+    - name: Create directory to store HostGrid holding pages
+      shell: mkdir -p /usr/local/src/ansible-scripts/hostgrid-holding
+      when: label == "hostgrid-cpanel"
+
+    - name: Create directory to store HostPlus holding pages
+      shell: mkdir -p /usr/local/src/ansible-scripts/hostplus-holding
+      when: label == "hostplus-cpanel"
+
+    - name: Create directory to store Sitecreator holding pages
+      shell: mkdir -p /usr/local/src/ansible-scripts/sitecreator-holding
+      when: label == "sitecreator-cpanel"
+
+    - name: install git
+      yum:
+        lock_timeout: 180
+        name: git
+        state: latest
+
+    - name: Read-Write from git for HostGrid brand
+      git:
+        repo: https://dipaksalve13:b8e740c08d98c4a009c842ca6b9d89da2345534b@github.com/LucidCube/hostgrid-holding.git
+        dest: /usr/local/src/ansible-scripts/hostgrid-holding
+        update: yes
+      when: hostnamesuffix == "srv.hostgrid.com"
+
+    - name: Copy website default page for HostGrid brand
+      copy:
+        src: /usr/local/src/ansible-scripts/hostgrid-holding/plesk/httpdocs/index.php
+        dest: /root/cpanel3-skel/public_html
+        remote_src: yes
+        force: yes
+      when: hostnamesuffix == "srv.hostgrid.com"
+
+    - name: Copy suspended page for HostGrid brand
+      copy:
+        src: /usr/local/src/ansible-scripts/hostgrid-holding/plesk/error_docs/maintenance.html
+        dest: /var/cpanel/webtemplates/root/english
+        remote_src: yes
+        force: yes
+      when: hostnamesuffix == "srv.hostgrid.com"
+
+    - name: Read-Write from git for hostplus
+      git:
+        repo: https://dipaksalve13:b8e740c08d98c4a009c842ca6b9d89da2345534b@github.com/LucidCube/hostplus-holding.git
+        dest: /usr/local/src/ansible-scripts/hostplus-holding
+        update: yes
+        version: '1.0.3'
+      when: hostnamesuffix == "srv.hostplus.com"
+
+    - name: Copy website default page for Hostplus brand
+      copy:
+        src: /usr/local/src/ansible-scripts/hostplus-holding/plesk/httpdocs/index.php
+        dest: /root/cpanel3-skel/public_html
+        remote_src: yes
+        force: yes
+      when: hostnamesuffix == "srv.hostplus.com"
+
+    - name: Copy suspended page for Hostplus brand
+      copy:
+        src: /usr/local/src/ansible-scripts/hostplus-holding/plesk/error_docs/maintenance.html
+        dest: /var/cpanel/webtemplates/root/english
+        remote_src: yes
+        force: yes
+      when: hostnamesuffix == "srv.hostplus.com"
+
+    - name: Read-Write from git for SiteCreator
+      git:
+        repo: https://dipaksalve13:b8e740c08d98c4a009c842ca6b9d89da2345534b@github.com/LucidCube/sitecreator-holding.git
+        dest: /usr/local/src/ansible-scripts/sitecreator-holding
+        update: yes
+        version: '1.0.3'
+      when: hostnamesuffix == "srv.sitecreator.com"
+
+    - name: Copy website default page for SiteCreator brand
+      copy:
+        src: /usr/local/src/ansible-scripts/sitecreator-holding/plesk/httpdocs/index.php
+        dest: /root/cpanel3-skel/public_html
+        remote_src: yes
+        force: yes
+      when: hostnamesuffix == "srv.sitecreator.com"
+
+    - name: Copy suspended page for SiteCreator brand
+      copy:
+        src: /usr/local/src/ansible-scripts/sitecreator-holding/plesk/error_docs/maintenance.html
+        dest: /var/cpanel/webtemplates/root/english
+        remote_src: yes
+        force: yes
+      when: hostnamesuffix == "srv.sitecreator.com"
+
+    - name: Renamed the suspended page
+      shell: mv /var/cpanel/webtemplates/root/english/maintenance.html /var/cpanel/webtemplates/root/english/suspended.tmpl
+
+    - name: Change hostname
+      shell: hostnamectl set-hostname '{{ Instancename }}'.'{{ hostnamesuffix }}'
+
+    - name: Get hostname from /etc/hosts file
+      shell: cat /etc/hosts | awk '{if(NR==3) print $2}'
+      register: hosts
+
+    - name: Change hostname in /etc/hosts
+      shell: sed -i 's/'{{ hosts.stdout }}'/'{{ Instancename }}'.'{{ hostnamesuffix }}'/g' /etc/hosts
+
+    - name: Get hostname from /etc/hosts file
+      shell: cat /etc/hosts | awk '{if(NR==3) print $3}'
+      register: hosts1
+
+    - name: Change hostname in /etc/hosts
+      shell: sed -i 's/'{{ hosts1.stdout }}'/'{{ Instancename }}'/g' /etc/hosts
+
+    - name: Get hostname from /etc/hosts file
+      shell: cat /etc/hosts | awk '{if(NR==3) print $4}'
+      register: hosts2
+
+    - name: Change hostname in /etc/hosts
+      shell: sed -i 's/'{{ hosts2.stdout }}'/ /g' /etc/hosts
+
+    - name: Remove the used hostname from the list
+      local_action: command sed -i '/'{{ Instancename }}'/d' /etc/ansible/cpanel-provision-host-without-CL/hostnames.txt
+
+    - name: set hostname in WHM
+      shell: /usr/local/cpanel/bin/set_hostname '{{ Instancename }}'.'{{ hostnamesuffix }}'
+
+    - name: Get internal IP of instance
+      command: 'curl -H "Metadata-Flavor: Google" http://metadata/computeMetadata/v1/instance/network-interfaces/0/ip'
+      register: internalip
+
+    - name: Set IP in Baisc WHM setup
+      shell: sed -i 9's/$/'{{ internalip.stdout }}' &/' /etc/wwwacct.conf
+
+    - name: Get external IP of instance
+      command: 'curl -H "Metadata-Flavor: Google" http://metadata/computeMetadata/v1/instance/network-interfaces/0/access-configs/0/external-ip'
+      register: externalip
+    - local_action: copy content="{{ externalip.stdout }}" dest="/usr/local/src/ansible-scripts/cpanel-instanceip.txt"
+
+    - name: Install PHP modules for 7.3 and 7.4
+      shell: yum install -y ea-php73-php-bz2.x86_64 ea-php73-php-enchant.x86_64 ea-php73-php-exif.x86_64 ea-php73-php-fileinfo.x86_64 ea-php73-php-gettext.x86_64 ea-php73-php-intl.x86_64 ea-php73-php-soap.x86_64 ea-php73-php-tidy.x86_64 ea-php73-php-xmlrpc.x86_64 ea-php73-php-zip.x86_64; yum install -y ea-php74-php-bz2.x86_64 ea-php74-php-enchant.x86_64 ea-php74-php-exif.x86_64 ea-php74-php-fileinfo.x86_64 ea-php74-php-gettext.x86_64 ea-php74-php-intl.x86_64 ea-php74-php-soap.x86_64 ea-php74-php-tidy.x86_64 ea-php74-php-xmlrpc.x86_64 ea-php74-php-zip.x86_64;
+
+    - name: Install PHP8.0 modules
+      shell: yum install -y ea-php80-php-bz2.x86_64 ea-php80-php-enchant.x86_64 ea-php80-php-exif.x86_64 ea-php80-php-fileinfo.x86_64 ea-php80-php-gettext.x86_64 ea-php80-php-intl.x86_64 ea-php80-php-soap.x86_64 ea-php80-php-tidy.x86_64 ea-php80-php-xmlrpc.x86_64 ea-php80-php-zip.x86_64;
+
+    - name: Add disable functions in php.ini of php73 and php74
+      shell: replace "disable_functions =" "disable_functions = system, show_source, symlink, exec, dl,shell_exec, passthru, escapeshellarg, escapeshellcmd" -- /opt/cpanel/ea-php73/root/etc/php.ini; replace "disable_functions =" "disable_functions = system, show_source, symlink, exec, dl,shell_exec, passthru, escapeshellarg, escapeshellcmd" -- /opt/cpanel/ea-php74/root/etc/php.ini; service httpd restart;
+
+    - name: Add disable functions in php.ini of php8.0
+      shell: replace "disable_functions =" "disable_functions = system, show_source, symlink, exec, dl,shell_exec, passthru, escapeshellarg, escapeshellcmd" -- /opt/cpanel/ea-php80/root/etc/php.ini;service httpd restart;
+
+    - name: Set PHP 8.0 as native PHP version
+      shell: whmapi1 php_set_system_default_version version=ea-php80
+
+    - name: Disable exim service
+      shell: service exim stop; systemctl disable exim; touch /etc/eximdisable;
+
+#    - name: Create directory /var/cpanel/customizations/brand to place branding image
+#      shell: cd /var/cpanel/customizations; mkdir -p brand; chmod 755 /var/cpanel/customizations/brand;
+
+    - name: Copy cPanel branding image for sitecreator brand
+      copy:
+        src: /usr/local/src/ansible-scripts/sitecreator.png
+        dest: /var/cpanel/customizations/brand
+      when: hostnamesuffix == "srv.sitecreator.com"
+
+    - name: Copy cPanel branding image for hostplus brand
+      copy:
+        src: /usr/local/src/ansible-scripts/hostplus.png
+        dest: /var/cpanel/customizations/brand
+      when: hostnamesuffix == "srv.hostplus.com"
+
+    - name: Copy cPanel branding image for HostGrid brand
+      copy:
+        src: /usr/local/src/ansible-scripts/hostgrid.png
+        dest: /var/cpanel/customizations/brand
+      when: hostnamesuffix == "srv.hostgrid.com"
+
+    - name: Rename the image name to logo.png for HostGrid
+      shell: mv /var/cpanel/customizations/brand/hostgrid.png /var/cpanel/customizations/brand/logo.png; /usr/local/cpanel/bin/sprite_generator --theme paper_lantern; /usr/local/cpanel/bin/rebuild_sprites;
+      when: hostnamesuffix == "srv.hostgrid.com"
+
+    - name: Rename the image name to logo.png for hostplus
+      shell: mv /var/cpanel/customizations/brand/hostplus.png /var/cpanel/customizations/brand/logo.png; /usr/local/cpanel/bin/sprite_generator --theme paper_lantern; /usr/local/cpanel/bin/rebuild_sprites;
+      when: hostnamesuffix == "srv.hostplus.com"
+
+    - name: Rename the image name to logo.png for sitecreator
+      shell: mv /var/cpanel/customizations/brand/sitecreator.png /var/cpanel/customizations/brand/logo.png; /usr/local/cpanel/bin/sprite_generator --theme paper_lantern; /usr/local/cpanel/bin/rebuild_sprites;
+      when: hostnamesuffix == "srv.sitecreator.com"
+
+    - name: Copy site.pro licenseing API for HostGrid brand
+      copy:
+        src: /usr/local/src/ansible-scripts/hostgrid-sitepro-api/
+        dest: /var/cpanel/customizations/brand
+      when: hostnamesuffix == "srv.hostgrid.com"
+
+    - name: Copy site.pro licenseing API for HostPlus brand
+      copy:
+        src: /usr/local/src/ansible-scripts/hostplus-sitepro-api/
+        dest: /var/cpanel/customizations/brand
+      when: hostnamesuffix == "srv.hostplus.com"
+
+    - name: Copy site.pro licenseing API for SiteCreator brand
+      copy:
+        src: /usr/local/src/ansible-scripts/sitecreator-sitepro-api/
+        dest: /var/cpanel/customizations/brand
+      when: hostnamesuffix == "srv.sitecreator.com"
+
+    - name: Add instance IP in copied site.pro API for HostGrid brand
+      shell: sed -i 's/0.0.0.0/'{{ externalip.stdout }}'/g' /var/cpanel/customizations/brand/hostgrid-sitepro-api.php
+      when: hostnamesuffix == "srv.hostgrid.com"
+
+    - name: Add instance IP in copied site.pro API for Hostplus brand
+      shell: sed -i 's/0.0.0.0/'{{ externalip.stdout }}'/g' /var/cpanel/customizations/brand/hostplus-sitepro-api.php
+      when: hostnamesuffix == "srv.hostplus.com"
+
+    - name: Add instance IP in copied site.pro API for SiteCreator brand
+      shell: sed -i 's/0.0.0.0/'{{ externalip.stdout }}'/g' /var/cpanel/customizations/brand/sitecreator-sitepro-api.php
+      when: hostnamesuffix == "srv.sitecreator.com"
+
+    - name: Create mysql log file with hostname
+      shell: touch /var/lib/mysql/'{{ Instancename }}'.'{{ hostnamesuffix }}'.err; chmod 660 /var/lib/mysql/'{{ Instancename }}'.'{{ hostnamesuffix }}'.err; chown mysql.mysql /var/lib/mysql/'{{ Instancename }}'.'{{ hostnamesuffix }}'.err;
+
+    - name: Add entry for mysql error log file in /etc/my.cnf
+      shell: sed -i '13d' /etc/my.cnf; sed -i '$ a log-error = /var/lib/mysql/'{{ Instancename }}'.'{{ hostnamesuffix }}'.err' /etc/my.cnf; service mysql restart;
+
+    - name: Activate cpanel License
+      shell: /usr/local/cpanel/cpkeyclt
+      ignore_errors: true
+
+    - name: Enable cPHulk Brute Force Protection
+      shell: whmapi1 configureservice service=cphulkd enabled=1
+      ignore_errors: true
+
+    - name: Delete directory where site.pro API files stored for HostGrid brand
+      shell: cd /var/cpanel/customizations/brand; rm -rf hostgrid-sitepro-api; rm -rf pexpect-3.3* logo.png;
+      when: label == "hostgrid-cpanel"
+
+    - name: Delete directory where site.pro API files stored for HostPlus brand
+      shell: cd /var/cpanel/customizations/brand; rm -rf hostplus-sitepro-api; rm -rf pexpect-3.3* logo.png;
+      when: label == "hostplus-cpanel"
+
+    - name: Delete directory where site.pro API files stored for SiteCreator brand
+      shell: cd /var/cpanel/customizations/brand; rm -rf sitecreator-sitepro-api; rm -rf pexpect-3.3* logo.png;
+      when: label == "sitecreator-cpanel"
+
+    - name: Reboot the instance
+      reboot:
+
+    - name: Perform UPCP
+      shell: /scripts/upcp --force
+
+    - name: Upgrade all packages
+      yum:
+         name: '*'
+         state: latest

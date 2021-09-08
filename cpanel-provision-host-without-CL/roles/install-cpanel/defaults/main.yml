@@ -1,0 +1,10 @@
+---
+## cPanel options for wwwacct.conf
+nameserver_primary: ns1.hostplus.com
+nameserver_secondary: ns2.hostplus.com
+nameserver_tertiary: ns3.hostplus.com
+nameserver_quaternary: ns4.hostplus.com
+
+#cpanel_contact_pager: support@hostplus.com
+cpanel_email_address: support@hostplus.com
+

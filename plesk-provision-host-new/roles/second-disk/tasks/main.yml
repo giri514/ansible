@@ -1,0 +1,17 @@
+---
+- name: Partition new disk
+  shell: /bin/echo -e "n\np\n1\n\n\nw" | sudo fdisk /dev/sdb
+
+- name: Create a xfs filesystem on /dev/sdb1
+  community.general.filesystem:
+     fstype: xfs
+     dev: /dev/sdb1
+
+- name: Mount /var on /dev/sdb1
+  shell: mkdir /mnt/var_new; mount /dev/sdb1 /mnt/var_new; rsync -avHPSAX /var/ /mnt/var_new/; mv /var /var_old; mkdir /var;
+
+- name: Add fstab entry for /var
+  shell: sed -i '$ a /dev/sdb1               /var                    xfs     defaults        0 0' /etc/fstab
+
+- name: Mount /var
+  shell: umount /mnt/var_new; mount /var

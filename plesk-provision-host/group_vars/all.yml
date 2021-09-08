@@ -1,0 +1,51 @@
+---
+
+######################################################
+### Plesk settings begin
+
+### Define URL for license file
+# plesk_license_url: "<TBD_license_file_URL>"
+
+### Activation code for trial license can be obtained here http://www.plesk.com/download
+#plesk_license_activation_code: A00Y00-CJNZ06-498595-9EYN26-N8FW02
+
+### Installation parameters
+one_click_installer: https://autoinstall.plesk.com/one-click-installer
+plesk_installer: https://autoinstall.plesk.com/plesk-installer
+plesk_tier: Stable
+
+### Extensions catalog URL
+extore_url: https://ext.plesk.com
+
+
+### Plesk initialization parameters
+eula_license_agreed: true
+ip_type: shared
+admin_info_not_required: true
+admin_email: support@hostplus.com
+admin_company: HostPlus
+admin_address: "Larch House, Parklands Business Park"
+admin_city: Denmead
+admin_state: Hampshire
+admin_zip: PO7 6XP
+admin_country: UK
+admin_phone:
+
+### Plesk settings end
+######################################################
+
+
+
+
+######################################################
+### VM settings begin
+
+### Swapfile size
+swapsize: 1G
+
+### SSH key private part
+ssh_key_file: ~/.ssh/id_rsa
+ssh_pubkey_file: ~/.ssh/id_rsa.pub
+
+### Server settings begin
+######################################################

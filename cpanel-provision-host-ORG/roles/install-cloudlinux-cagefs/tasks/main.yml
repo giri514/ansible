@@ -1,0 +1,23 @@
+---
+- name: Install CageFS
+  shell: yum install cagefs -y
+
+- name: Comment entry so that we can switch user from ansible to root
+  shell: replace "session      required      pam_lve.so" "#session      required      pam_lve.so" -- /etc/pam.d/sshd
+
+- name: Copy CageFSinit shell script
+  copy:
+    src: ~/cagefsinit.sh
+    dest: /home/ansible
+
+- name: Reboot the instance before CageFS initialization
+  reboot:
+
+- name: Initialize Cagefs
+  shell: chmod +x /home/ansible/cagefsinit.sh; /bin/sh /home/ansible/cagefsinit.sh;
+  ignore_errors: true
+
+- name: Wait for Cagefs initialization to complete...
+  wait_for:
+    path: /var/log/cagefs-update.log
+    search_regex: "Updating users"

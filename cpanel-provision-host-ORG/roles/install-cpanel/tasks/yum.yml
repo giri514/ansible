@@ -1,0 +1,82 @@
+---
+# file: roles/cpanel/tasks/yum.yml
+#
+# cPanel Role
+# Task for handling yum package stuff
+#
+- name: cPanel Required packages rpms
+  yum:
+    name: "{{ item.name }}"
+    state: "{{ item.state }}"
+  with_items:
+    - { name: "curl", state: "installed" }
+    - { name: "wget", state: "installed" }
+    - { name: "perl", state: "installed" }
+    - { name: "@Desktop", state: "removed" }
+    - { name: "@Mono", state: "removed" }
+    - { name: "@E-mail server", state: "removed" }
+    - { name: "@FTP server", state: removed }
+    - { name: "@GNOME Desktop Environment", state: "removed" }
+    - { name: "@KDE Desktop", state: "removed" }
+    - { name: "@X Window System", state: "removed" }
+    - { name: "@Xfce", state: "removed" }
+    - { name: "@Web Server", state: "removed" }
+  tags: yum
+
+- name: Upgrade all packages
+  yum:
+     name: '*'
+     state: latest
+
+- name: Stop syncing the hostname from GCP
+  shell: sed -i '16,21 s/^/#/' /etc/dhcp/dhclient.d/google_hostname.sh; chattr +ai /etc/dhcp/dhclient.d/google_hostname.sh
+
+- name: Reboot the machine after yum updates
+  reboot:
+
+- name: Install telnet, atop, htop, hdparm
+  yum:
+    name:
+      - telnet
+      - atop
+      - htop
+      - hdparm
+      - mlocate
+    state: present
+
+- name: Set log all the activity on every 300 seconds for atop
+  shell: replace "600" "300" -- /etc/sysconfig/atop; systemctl enable atop; service atop restart;
+
+- name: Disable firewalld service
+  service:
+     name: firewalld
+     state: stopped
+     enabled: no
+
+- name: Mask the FirewallD service to prevent it from being started by another services
+  shell: systemctl mask --now firewalld
+
+- name: Install SAR
+  yum:
+    name: "sysstat"
+    state: present
+
+- name: Start and enable SAR service
+  service:
+     name: sysstat
+     state: started
+     enabled: yes
+
+- name: Install iptables service
+  yum:
+    name:
+      - iptables-services
+    state: present
+- name: Start and enable iptables service
+  service:
+     name: iptables
+     state: started
+     enabled: yes
+
+- name: Perform updatedb
+  shell: updatedb

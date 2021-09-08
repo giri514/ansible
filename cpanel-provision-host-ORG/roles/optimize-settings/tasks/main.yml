@@ -1,0 +1,18 @@
+---
+- name: MySQL connection settings
+  shell: sed -i '$ a max_connections = 500' /etc/my.cnf; sed -i '$ a interactive_timeout = 180' /etc/my.cnf; sed -i '$ a wait_timeout = 180' /etc/my.cnf;
+
+- name: MySQL Innodb settings
+  shell: sed -i '$ a innodb_buffer_pool_instances = 32' /etc/my.cnf; sed -i '$ a innodb_buffer_pool_size = 20G' /etc/my.cnf; sed -i '$ a innodb_log_buffer_size = 16M' /etc/my.cnf; sed -i '$ a innodb_log_file_size = 512M' /etc/my.cnf; sed -i '$ a innodb_thread_concurrency = 5' /etc/my.cnf;
+
+- name: MySQL buffer settings
+  shell: sed -i '$ a join_buffer_size = 4M' /etc/my.cnf; sed -i '$ a read_buffer_size = 3M' /etc/my.cnf; sed -i '$ a read_rnd_buffer_size = 4M' /etc/my.cnf; sed -i '$ a sort_buffer_size = 4M' /etc/my.cnf;
+
+- name: Disable MySQL strict mode
+  shell: sed -i '$ a sql_mode= NO_AUTO_CREATE_USER,NO_ENGINE_SUBSTITUTION' /etc/my.cnf; service mysql restart;
+
+- name: Backup EasyApache4 conf file before making changes
+  shell: cp /etc/cpanel/ea4/ea4.conf /etc/cpanel/ea4/ea4.conf-org
+
+- name: Optimize Apache connections
+  shell: replace " 256" " 500" -- /etc/cpanel/ea4/ea4.conf; replace "150" "500" -- /etc/cpanel/ea4/ea4.conf; /scripts/rebuildhttpdconf;

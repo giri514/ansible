@@ -1,0 +1,50 @@
+- name: Create an instance
+  hosts: merida
+  connection: ssh
+  become: true
+
+  tasks:
+   - name: Allow access to ansible user
+     shell: sudo sed -i '$ a -:ansible:ALL' /etc/security/access.conf
+   
+   - name: Install yum package for MySQL Governor
+     shell: yum install governor-mysql -y
+   
+   - name: Set MariaDB version before installing Governor
+     shell: /usr/share/lve/dbgovernor/mysqlgovernor.py --mysql-version=mariadb103
+   
+   - name: Install CloudLinux MySQL Governor
+     shell: /usr/share/lve/dbgovernor/mysqlgovernor.py --install --yes
+   
+   - name: Wait for MySQL Governor to install...
+     wait_for:
+       path: /usr/share/lve/dbgovernor/governor_install.log
+       search_regex: "Installation of mysql for db_governor completed"
+   
+   - name: Enable CageFS for default users like ansible
+     shell: cagefsctl --enable-all
+   
+   - name: Install cloud-utils-growpart to perform live disk upgrade
+     shell: yum -y install cloud-utils-growpart
+     ignore_errors: true
+   
+   - name: Install lynx
+     shell: yum -y install lynx
+     ignore_errors: true
+   
+   - name: Install mlocate
+     shell: yum -y install mlocate; updatedb;
+     ignore_errors: true
+   
+   - name: Install tcpdump
+     shell: yum -y install tcpdump
+     ignore_errors: true
+   
+   - name: Install lynis to perform basic security checks
+     shell: yum -y install lynis
+     ignore_errors: true
+
+   - name: Perform yum updates if any
+     shell: yum update -y
+     ignore_errors: true
+

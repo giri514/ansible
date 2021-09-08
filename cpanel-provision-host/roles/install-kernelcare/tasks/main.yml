@@ -1,0 +1,7 @@
+---
+- name: Install kernelcare
+  shell: curl -s https://repo.cloudlinux.com/kernelcare/kernelcare_install.sh | bash
+
+- name: Apply kernelcare patches
+  shell: kcarectl --update --test
+  ignore_errors: true

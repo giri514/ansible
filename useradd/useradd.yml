@@ -1,0 +1,53 @@
+- name: Add user
+  hosts: localhost
+  gather_facts: no
+  vars_prompt:
+   - name: username
+     prompt: "Please enter the user Name"
+     private: no
+
+  tasks:
+   - name: Add the user with a specific uid and a primary group of 'admin'
+     user:
+       name: '{{ username }}'
+       comment: '{{ username }}'
+       group:
+
+   - name: Create a 2048-bit SSH key for user  in ~jsmith/.ssh/id_rsa
+     user:
+       name: '{{ username }}'
+       generate_ssh_key: yes
+       ssh_key_comment: '{{ username }}'
+       ssh_key_bits: 2048
+       ssh_key_file: .ssh/id_rsa 
+
+
+
+#   - name: Create a login user
+#     shell: useradd '{{ username }}'
+#     
+#   - name: Create .ssh directory
+#     shell: cd /home; cd '{{ username }}'; mkdir .ssh
+#
+#   - name: Create ssh files
+#     shell: touch authorized_keys id_rsa id_rsa.pub
+
+
+
+
+
+
+
+# - name: Add the user with a specific uid and a primary group of 'admin'
+#     user:
+#       name: '{{ username }}'
+#       comment: '{{ username }}'
+#       uid: 1040
+#       group: root
+
+#- name: Create a 2048-bit SSH key for user jsmith in ~jsmith/.ssh/id_rsa
+#  user:
+#    name: jsmith
+#    generate_ssh_key: yes
+#    ssh_key_bits: 2048
+#    ssh_key_file: .ssh/id_rsa

@@ -1,0 +1,68 @@
+---
+- name: Upgrade all packages
+  yum:
+     name: '*'
+     state: latest
+
+- name: Stop syncing the hostname from GCP
+  shell: sed -i '16,21 s/^/#/' /etc/dhcp/dhclient.d/google_hostname.sh; chattr +ai /etc/dhcp/dhclient.d/google_hostname.sh
+
+- name: Reboot the machine after yum updates
+  reboot:
+
+- name: Install telnet, atop, htop, hdparm
+  yum:
+    name:
+      - telnet
+      - atop
+      - htop
+      - hdparm
+    state: present
+- name: Set log all the activity on every 300 seconds for atop
+  shell: replace "600" "300" -- /etc/sysconfig/atop; systemctl enable atop; service atop restart;
+- name: Disable firewalld service
+  service:
+     name: firewalld
+     state: stopped
+     enabled: no
+- name: Mask the FirewallD service to prevent it from being started by another services
+  shell: systemctl mask --now firewalld
+- name: Install iptables service
+  yum:
+    name:
+      - iptables-services
+    state: present
+- name: Start and enable iptables service
+  service:
+     name: iptables
+     state: started
+     enabled: yes
+- name: Flush iptable rules
+  shell: iptables -F; echo > /etc/sysconfig/iptables;
+- name: Add default iptables rules for default Plesk ports
+  shell: iptables -A INPUT -i lo -j ACCEPT;iptables -A OUTPUT -o lo -j ACCEPT;iptables -A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT;iptables -A INPUT -p tcp --dport 10050 -j ACCEPT;iptables -A INPUT -p tcp --dport 10051 -j ACCEPT;iptables -A INPUT -p tcp --dport 20 -j ACCEPT;iptables -A INPUT -p tcp --dport 21 -j ACCEPT;iptables -A INPUT -p tcp --dport 22 -j ACCEPT;iptables -A INPUT -p udp --dport 53 -j ACCEPT;iptables -A INPUT -p tcp --dport 80 -j ACCEPT;iptables -A INPUT -p udp --dport 123 -j ACCEPT;iptables -A INPUT -p tcp --dport 443 -j ACCEPT;iptables -A INPUT -p tcp --dport 49152:65535 -j ACCEPT;iptables -A INPUT -p tcp -m tcp --dport 9080 -j ACCEPT;iptables -A INPUT -p tcp -m tcp --dport 8443 -j ACCEPT;iptables -A INPUT -p tcp -m tcp --dport 8880 -j ACCEPT;iptables -A INPUT -p tcp -m tcp --dport 8447 -j ACCEPT;iptables -A INPUT -p tcp --dport 3306 -j ACCEPT;iptables -A INPUT -p icmp -j ACCEPT;iptables -P INPUT DROP;iptables -P FORWARD DROP;iptables -P OUTPUT ACCEPT;service iptables save;
+- name: Install SAR
+  yum:
+    name: "sysstat"
+    state: present
+- name: Start and enable SAR service
+  service:
+     name: sysstat
+     state: started
+     enabled: yes
+- name: Install Site Builder
+  shell: plesk bin extension --install-url https://sync.site.pro/My-Licenses/installer/eyJpZCI6Ijc1NTExNiIsInVzZXJJZCI6IjE5NDQxMDQiLCJzYWx0IjoiZDZlYmQxZjQifQ2/Plesk/plugin
+- name: Install imunify360 extension
+  shell: plesk bin extension --install imunify360; /usr/local/psa/admin/sbin/modules/imunify360/i360deploy.sh -y --force;
+- name: Install component Plesk Cgroups Manager
+  shell: plesk installer --select-release-current --install-component resctrl;
+- name: Enable MariaDB error logs
+  shell: mkdir -p /var/log/mariadb; touch /var/log/mariadb/mariadb.log; chown mysql.mysql /var/log/mariadb/mariadb.log;
+- name: Add entry for MariaDB error logs
+  shell: sed -i '$ a log-error = /var/log/mariadb/mariadb.log' /etc/my.cnf
+- name: Restart mariaDB service
+  shell: service mariadb restart;
+- name: Remove extension Social Login
+  shell: plesk bin extension --uninstall social-login
+- name: Disable MariaDB repo
+  shell: replace "enabled = 1" "enabled = 0" -- /etc/yum.repos.d/mariadb.repo; yum clean all;

@@ -1,0 +1,74 @@
+- name: Check Kernel Versions on the instances
+  hosts: webservers  
+  connection: ssh
+  become: true
+
+  tasks:
+
+    - name: Check current kernel versions on all the instances
+      shell: uname -r
+      register: kernel
+
+    - name: Print the current kernel versions on all the instances
+      debug: msg="Current Kernel Version- '{{ kernel.stdout }}'"
+
+    - name: Check for kernel updates
+      shell: yum list kernel | grep "Available Packages" -A1 | awk '{print $2}' | tail -1
+      register: yum
+
+    - name: Available Kernel Versions
+      debug: msg="Available Kernel Version- '{{ yum.stdout }}'"
+
+- name: Choice to update kernel versions on all the instances
+  hosts: webservers
+  connection: ssh
+  become: true
+
+  vars_prompt:
+
+   - name: update
+     prompt: "DO YOU WISH TO UPDATE THE KERNEL VERSIONS ON ALL THE INSTANCES? (yes/no)"
+     private: no
+   - name: apply
+     prompt: "DO YOU WISH TO REBOOT ALL THE INSTANCES AFTER KERNEL UPDATES? (yes/no)"
+     private: no
+
+  tasks:
+
+    - local_action: copy content="{{ update }}" dest="/usr/local/src/ansible-tmp/kernel-update"
+    - local_action: copy content="{{ apply }}" dest="/usr/local/src/ansible-tmp/reboot-after-kernel-update"
+
+- name: Update Kernel Versions on all the instances
+  hosts: webservers
+  connection: ssh
+  become: true
+
+  vars:
+    kernelupdate: "{{ lookup('file', '/usr/local/src/ansible-tmp/kernel-update') }}"
+    postreboot: "{{ lookup('file', '/usr/local/src/ansible-tmp/reboot-after-kernel-update') }}"
+
+  tasks:
+
+    - name: Update kernel versions on all the instances
+      shell: yum update kernel -y
+      when: kernelupdate == "yes"
+
+    - name: Reboot the instances to boot them with newly installed kernels
+      reboot:
+      when: postreboot == "yes"
+
+    - name: Check the kernel versions on all the instances
+      shell: uname -r
+      register: newkernel
+
+    - name: Print the current kernel versions on all the instances
+      debug: msg="Booted Kernel Version- '{{ newkernel.stdout }}'"
+
+- name: Delete the temprory files created by the script
+  hosts: localhost
+  tasks:
+    - name: Delete local files
+      ansible.builtin.file: 
+        path: /usr/local/src/ansible-tmp/kernel-update 
+        path: /usr/local/src/ansible-tmp/reboot-after-kernel-update
+        state: absent

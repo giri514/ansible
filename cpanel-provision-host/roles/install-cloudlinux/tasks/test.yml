@@ -1,0 +1,45 @@
+- name: Create an instance
+  hosts: merida
+  connection: ssh
+  become: true
+  
+  vars_prompt:
+   - name: cloudlinux_key
+     prompt: "Please enter the CloudLinux License Key and in case of IP based License just press ENTER"
+     private: no
+
+  tasks:
+
+   - local_action: copy content="{{ cloudlinux_key }}" dest="/usr/local/src/ansible-tmp/cpanel-cloudlinux-key.txt"
+   
+  vars:
+    cloudlinux_key: "{{ lookup('file', '/usr/local/src/ansible-tmp/cpanel-cloudlinux-key.txt') }}"
+
+  tasks:	
+   - name: Download CloudLinux installer
+     shell: cd /usr/src; wget http://repo.cloudlinux.com/cloudlinux/sources/cln/cldeploy;
+
+   - name: Reboot the instance before CloudLinux installation
+     reboot:
+   
+   - name: Install CloudLinux - Using Key Based License
+     shell: /bin/bash /usr/src/cldeploy -k '{{ cloudlinux_key }}'
+     when: cloudlinux_key | length > 0
+   
+   - name: Install CloudLinux - Using IP Based License
+     shell: /bin/bash /usr/src/cldeploy -i
+     when: cloudlinux_key | length == 0
+   
+   - name: Wait for CloudLinux to install to complete...
+     wait_for:
+       path: /var/log/cldeploy.log
+       search_regex: "httpd restarted successfully"
+   
+   - name: Reboot the instance to boot it with CloudLinux kernel
+     reboot:
+   
+   - name: Backup file "/etc/sysctl.d/90-cloudlinux.conf"
+     shell: cp /etc/sysctl.d/90-cloudlinux.conf /etc/sysctl.d/90-cloudlinux.conf.zabbix.$(date +"%Y%m%d")
+   
+   - name: Add entry for zabbix user with its GID in "/etc/sysctl.d/90-cloudlinux.conf"
+     shell: echo fs.proc_super_gid=$(awk -F":" '$1=="zabbix"{print $3; exit}' /etc/group) >> /etc/sysctl.d/90-cloudlinux.conf
