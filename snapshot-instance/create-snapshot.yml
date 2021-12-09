@@ -1,0 +1,31 @@
+- name: Create Snapshots of the instance disks
+  hosts: localhost
+  gather_facts: no
+  
+  vars_prompt:
+   - name: Instancename
+     prompt: "Please enter the instance name for which you wish to create snapshots"
+     private: no
+
+  vars:
+      gcp_project: hp-ansible-automation-318010
+      gcp_cred_kind: serviceaccount
+      gcp_cred_file: /etc/ansible/auth.json
+
+  tasks:
+
+   - name: Check date and use it as snapshot suffix
+     local_action: command date +"%d-%m-%y"
+     register: date
+
+   - name: Create gce snapshot
+     community.google.gce_snapshot:
+       instance_name: "{{ Instancename }}"
+       snapshot_name: "{{ Instancename }}-{{ date.stdout }}"
+       state: present
+       service_account_email: ansible@hp-ansible-automation-318010.iam.gserviceaccount.com
+       credentials_file: "{{ gcp_cred_file }}"
+       project_id: "{{ gcp_project }}"
+#     async: 72000
+#     poll: 60
+#community.google.gce_snapshot:

@@ -1,0 +1,50 @@
+- name: cPanel Server Post Setup Playbook [This playbook should be run after cPanel license is purchased and activated]
+  hosts: queen
+  connection: ssh
+  become: true
+
+  vars_prompt:
+   - name: Brand
+     prompt: "Please enter the instance brand i.e. hostgrid or hostplus or sitecreator"
+     private: no
+
+  tasks:
+
+    - name: Activate cPanel License
+      shell: /usr/local/cpanel/cpkeyclt
+
+    - name: Move /backup directory in /home which is mounted on second drive
+      shell: mkdir /backup; mv /backup /home; ln -s /home/backup /backup
+
+    - name: Enable cPanel Daily backups
+      shell: whmapi1 backup_config_set backupenable=1 backuptype=compressed backup_daily_enable=1 backupdays=0,1,2,3,4,5,6 backup_daily_retention=5 backup_monthly_enable=1 backupaccts=1 backup_weekly_enable=1 backup_weekly_retention=2
+
+    - name: Set Critical load threshold to 5 in tweak settings
+      shell: replace "loadthreshold" "loadthreshold=5" -- /var/cpanel/cpanel.config; replace "extracpus=0" "extracpus=5"  -- /var/cpanel/cpanel.config; service cpanel restart;
+
+    - name: Disable Email and DNS options from default feature list
+      shell: whmapi1 update_featurelist featurelist=default spamassassin=0 emailtrace=0 emaildomainfwd=0 email_disk_usage=0 postgres=0 dynamicdns=0 autoresponders=0 caldavcarddav=0 changemx=0 traceaddy=0 defaultaddress=0 simplezoneedit=0 lists=0 forwarders=0 dnssec=0 spambox=0 nettools=0 blockers=0 emailtrace=0 ssh=0 zoneedit=0 traceaddy=0 emailauth=0 csvimport=0
+
+    - name: Disable IMAP and POP3 service from WHM >> Service Manager
+      shell: whmapi1 configureservice service=imap enabled=0 monitored=0; whmapi1 configureservice service=pop enabled=0 monitored=0;
+
+    - name: Disable DNS service
+      shell: whmapi1 set_nameserver nameserver=Disabled
+
+    - name: Create Packages "standard" and "premium" for HostGrid brand
+      shell: whmapi1 addpkg name=standard featurelist=default quota=unlimited; whmapi1 addpkg name=premium featurelist=default quota=unlimited;
+      when: Brand == "hostgrid"
+
+    - name: Create Packages "standard" and "premium" for HostPlus brand
+      shell: whmapi1 addpkg name=standard featurelist=default quota=unlimited; whmapi1 addpkg name=premium featurelist=default quota=unlimited;
+      when: Brand == "hostplus"
+
+    - name: Create Packages "standard", "professional" and "ecommerce" for SiteCreator brand
+      shell: whmapi1 addpkg name=standard featurelist=default quota=unlimited; whmapi1 addpkg name=professional featurelist=default quota=unlimited; whmapi1 addpkg name=ecommerce featurelist=default quota=unlimited;
+      when: Brand == "sitecreator"
+
+    - name: Disable Imunify360 from cPanel
+      shell: whmapi1 update_featurelist featurelist=default imunify360=0
+
+    - name: Disable SiteBuilder from cPanel
+      shell: whmapi1 update_featurelist featurelist=default sitebuilder=0

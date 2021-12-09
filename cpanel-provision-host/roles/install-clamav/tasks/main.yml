@@ -1,0 +1,24 @@
+---
+- name: Install libtool to load shared library libltdl.so.7
+  shell: yum install libtool-ltdl -y
+
+- name: Install ClamAv virus scanning plugin
+  shell: /scripts/update_local_rpm_versions --edit target_settings.clamav installed; /scripts/check_cpanel_rpms --fix --targets=clamav;
+
+- name: Symlink clamav binaries
+  shell: ln -s /usr/local/cpanel/3rdparty/bin/clamscan /usr/local/bin/clamscan; ln -s /usr/local/cpanel/3rdparty/bin/freshclam /usr/local/bin/freshclam; ln -s /usr/local/bin/freshclam /usr/bin/freshclam;
+
+- name: Edit freshclam.conf and add the entries for virus DBs
+  shell: sed -i '$ a DatabaseCustomURL http://cdn.malware.expert/malware.expert.ndb' /usr/local/cpanel/3rdparty/etc/freshclam.conf;
+  shell: sed -i '$ a DatabaseCustomURL http://cdn.malware.expert/malware.expert.hdb' /usr/local/cpanel/3rdparty/etc/freshclam.conf; 
+  shell: sed -i '$ a DatabaseCustomURL http://cdn.malware.expert/malware.expert.ldb' /usr/local/cpanel/3rdparty/etc/freshclam.conf; 
+  shell: sed -i '$ a DatabaseCustomURL http://cdn.malware.expert/malware.expert.fp' /usr/local/cpanel/3rdparty/etc/freshclam.conf;
+
+- name: Update virus database
+  shell: /usr/local/cpanel/3rdparty/bin/freshclam restart
+
+- name: Rename duplicate database
+  shell: mv /usr/local/cpanel/3rdparty/share/clamav/bytecode.cld /usr/local/cpanel/3rdparty/share/clamav/bytecode.cld-; service clamd restart;
+
+- name: Add weekly scanning cron and the results will be stored at /root/infections.txt
+  shell: sed -i '$ a 0 0 * * 0  while read domain user; do /usr/local/cpanel/3rdparty/bin/clamscan -i -r /home/"$user" 2>&1; done </etc/trueuserdomains >>/root/infections.txt' /var/spool/cron/root

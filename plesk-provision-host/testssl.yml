@@ -1,0 +1,24 @@
+- name: Create an instance
+  hosts: olive
+  connection: ssh
+  become: true
+
+  tasks: 
+
+   - name: Copy shell script to issue SSL certificates for the newly added domains
+     copy:
+       src: /usr/local/src/ansible-scripts/HostGridwildcard/
+       dest: /root
+  #   when: label == "hostgrid"
+  
+ #  - name: Copy shell script to issue SSL certificates for the newly added domains
+ #    copy:
+ #      src: /usr/local/src/ansible-scripts/Hostpluswildcard/*
+ #      dest: /root
+ #    when: label == "hostplus"
+ 
+#   - name: Copy shell script to issue SSL certificates for the newly added domains
+#     copy:
+#       src: /usr/local/src/ansible-scripts/Sitecreatorewildcard/*
+#       dest: /root
+#     when: label == "sitecreator"

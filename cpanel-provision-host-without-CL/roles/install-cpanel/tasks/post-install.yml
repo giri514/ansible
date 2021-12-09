@@ -1,0 +1,108 @@
+---
+- name: Post Install | cPanel config customization
+  template:
+    src: "{{ item.src }}"
+    dest: "{{ item.dest }}"
+    owner: root
+    group: root
+    mode: "{{ item.mode }}"
+  with_items:
+    - { src: "etc/wwwacct.conf.hostplus", dest: "/etc/wwwacct.conf", mode: "0644" }
+  tags: cpanel
+  when: hostnamesuffix == "srv.hostplus.com"
+
+- name: Post Install | cPanel config customization
+  template:
+    src: "{{ item.src }}"
+    dest: "{{ item.dest }}"
+    owner: root
+    group: root
+    mode: "{{ item.mode }}"
+  with_items:
+    - { src: "etc/wwwacct.conf.hostgrid", dest: "/etc/wwwacct.conf", mode: "0644" }
+  tags: cpanel
+  when: hostnamesuffix == "srv.hostgrid.com"
+
+- name: Post Install | cPanel config customization
+  template:
+    src: "{{ item.src }}"
+    dest: "{{ item.dest }}"
+    owner: root
+    group: root
+    mode: "{{ item.mode }}"
+  with_items:
+    - { src: "etc/wwwacct.conf.sitecreator", dest: "/etc/wwwacct.conf", mode: "0644" }
+  tags: cpanel
+  when: hostnamesuffix == "srv.sitecreator.com"
+
+#- name:  Post Install | disable the cPanel setup wizard
+#  file:
+#    path: /etc/.whostmgrft
+#    state: touch
+#    owner: root
+#    group: root
+#    mode: 0644
+#  changed_when: false
+#  tags: cpanel
+
+- name: Enable filesystem quotas
+  shell: /scripts/initquotas
+
+- name: Post Install | Enable FTP Server (pure-ftpd)
+  shell: /scripts/setupftpserver pure-ftpd
+
+- name: Install tmpwatch
+  shell: yum install tmpwatch -y
+
+- name: Post Install | TMPWatch Cron
+  cron:
+    name: "TMPWatch"
+    minute: "*/30"
+    job: "/usr/sbin/tmpwatch --mtime --nosymlinks 4 /tmp"
+    state: present
+  tags: cpanel
+
+- name: Post Install | Configure Pure-ftpd Server
+  file:
+    src: pure-ftpd.conf
+    dest: /etc/pure-ftpd.conf
+    mode: 0755
+    owner: root
+    group: root
+  notify: restart pure-ftpd
+
+- name: Post Install | Enable ModSec OWASP Vendor
+  shell: /scripts/modsec_vendor add http://httpupdate.cpanel.net/modsecurity-rules/meta_OWASP3.yaml
+
+- name: Post Install | Enable Updates for ModSec OWASP Vendor
+  shell: /scripts/modsec_vendor enable-updates OWASP3
+
+- name: Remove PHP7.2 and its modules
+  shell: yum remove ea-php72* -y
+
+- name: Install handler SuPHP
+  shell: yum remove ea-apache24-mod_ruid2 -y; yum install ea-apache24-mod_suphp.x86_64 -y;
+
+- name: Set SuPHP handler for PHP7.3, PHP7.4 and PHP8.0
+  shell: /usr/local/cpanel/bin/rebuild_phpconf --ea-php73=suphp; /usr/local/cpanel/bin/rebuild_phpconf --ea-php74=suphp; /usr/local/cpanel/bin/rebuild_phpconf --ea-php80=suphp;
+
+- name: Enable Shell Fork Bomb Protection
+  shell: /usr/local/cpanel/bin/install-login-profile --install limits
+
+- name: Disable Compiler Access for unprivileged users
+  shell: /scripts/compilers off
+
+- name: Install MySQL tunner
+  shell: wget http://mysqltuner.pl/ -O mysqltuner.pl; chmod +x mysqltuner.pl;
+
+- name: Enable jail apache
+  shell: replace "jailapache=0" "jailapache=1" -- /var/cpanel/cpanel.config; service cpanel restart;
+
+- name: Add Email address in "System Mail Preferences"
+  shell: echo auto.emails+ssl@hostgrid.com > /root/.forward; echo auto.emails+ssl@hostgrid.com > /var/cpanel/userhomes/cpanel/.forward;
+
+- name: Enable MariaDB service
+  shell: mv /etc/init.d/mysql /etc/init.d/mysql-old; systemctl enable mariadb;
+
+- name: Set time zone to Europe/London
+  shell: timedatectl set-timezone Europe/London

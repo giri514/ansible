@@ -1,0 +1,12 @@
+---
+- name: Stop MySQL before moving MySQL directory
+  shell: /scripts/restartsrv_tailwatchd --stop; /scripts/restartsrv_mysql --stop;
+
+- name: Add entry to disable ProtectHome in MariaDB file
+  shell: touch /etc/systemd/system/mariadb.service.d/homedir.conf; echo [Service] >> /etc/systemd/system/mariadb.service.d/homedir.conf; echo ProtectHome=false >> /etc/systemd/system/mariadb.service.d/homedir.conf; echo ProtectSystem=off >> /etc/systemd/system/mariadb.service.d/homedir.conf;
+
+- name: Move MySQL directory in /home
+  shell: mkdir /home/var_mysql; mv /var/lib/mysql /home/var_mysql; chown -R mysql:mysql /home/var_mysql/mysql; ln -s /home/var_mysql/mysql /var/lib/mysql;
+
+- name: Start the MySQL service
+  shell: systemctl daemon-reload; /scripts/restartsrv_tailwatchd --start; /scripts/restartsrv_mysql --start;

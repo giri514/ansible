@@ -1,0 +1,23 @@
+- name: Check Kernel Versions on the instances
+  hosts: elderbe5645645
+  connection: ssh
+  become: true
+
+  tasks:
+
+    - name: Read-Write from git for Sitecreator
+      git:
+        repo: https://dipaksalve13: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@github.com/LucidCube/sitecreator-holding.git
+        dest: /usr/local/src/ansible-scripts/sitecreator-holding
+        update: yes
+    #    version: '1.0.2'
+    #  when: label == "sitecreator"
+
+    - name: Copy Plesk  holding pages for Sitecreator brand
+      copy:
+        src: /usr/local/src/ansible-scripts/sitecreator-holding/public/default.html
+        dest: /var/www/vhosts/default/htdocs/
+        remote_src: yes
+        force: yes
+#     when: label == "sitecreator"
+#https://github.com/lucidcube/sitecreator-holding.git

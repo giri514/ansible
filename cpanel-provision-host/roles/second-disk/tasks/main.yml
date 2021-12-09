@@ -1,0 +1,28 @@
+---
+- name: Partition new disk
+  shell: /bin/echo -e "n\np\n1\n\n\nw" | sudo fdisk /dev/sdb
+
+- name: Create a xfs filesystem on /dev/sdb1
+  community.general.filesystem:
+     fstype: xfs
+     dev: /dev/sdb1
+
+- name: Stop services before moving /home to second disk
+  shell: systemctl stop chronyd; systemctl stop NetworkManager;
+  ignore_errors: true
+
+- name: Mount /home_new on /dev/sdb1 temporary
+  shell: mkdir /mnt/home_new; mount /dev/sdb1 /mnt/home_new; rsync -avHPSAX /home/ /mnt/home_new/;
+
+- name: Add fstab entry for /home
+  shell: sed -i '$ a /dev/sdb1               /home                    xfs     defaults,uquota        0 0' /etc/fstab
+
+- name: Mount /home
+  shell: umount /mnt/home_new; mount /home;
+
+- name: Start the stopped services
+  shell: systemctl start chronyd; systemctl start NetworkManager;
+  ignore_errors: true
+
+- name: Remove directory /mnt/home_new
+  shell: rm -rf /mnt/home_new

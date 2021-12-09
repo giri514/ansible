@@ -1,0 +1,9 @@
+- name: Create an instance
+  hosts: icaco
+  connection: ssh
+  become: true 
+
+  tasks:
+
+   - name: Update service plans standard and premium to set upload_max_filesize= 30M
+     shell:  plesk bin service_plan --update-php-settings 'standard' -settings custom_settings; plesk bin service_plan --update-php-settings 'professional' -settings custom_settings; plesk bin service_plan --update-php-settings 'ecommerce' -settings custom_settings;

@@ -1,0 +1,29 @@
+---
+control_panel: 'cPanel'
+
+# Imunify360
+imunify_key:
+
+# Plugin Settings
+
+install_csf: 'true'
+install_cmc: 'true'
+install_cse: 'true'
+install_kernelcare: 'true'
+install_cloudlinux_cagefs: 'true'
+install_cloudlinux_alt: 'true'
+install_letsencrypt: 'true'
+install_imunify: 'true'
+
+
+#  ##########################
+#  #### cPanel Settings #####
+#  ##########################
+
+cron_email_address: support@hostplus.com
+cpanel_email_address: support@hostplus.com
+alerts_email_address: support@hostplus.com
+cpanel_contact_pager: support@hostplus.com
+
+nameserver_primary: ns1.hostplus.com
+nameserver_secondary: ns2.hostplus.com

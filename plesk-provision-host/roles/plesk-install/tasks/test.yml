@@ -1,0 +1,41 @@
+- name: Create an instance
+  hosts: p-katapult
+  connection: ssh
+  become: true
+
+  tasks:
+   - name: Install wget
+     yum:
+       name:
+         - wget
+       state: present
+   
+   - name: Change kernel selction screen timeout
+     shell: sed -i 's/GRUB_TIMEOUT=0/GRUB_TIMEOUT=20/g' /etc/default/grub; grub2-mkconfig -o /boot/efi/EFI/centos/grub.cfg
+   
+   - name: Reboot the instance
+     reboot:
+   
+   - name: Install repo for MariDB 10.5
+     shell: curl -LsS https://downloads.mariadb.com/MariaDB/mariadb_repo_setup | sudo bash -s -- --mariadb-server-version="mariadb-10.5"
+   
+   - name: Setup MariDB 10.5 repo
+     shell: chmod +x mariadb_repo_setup; /bin/sh mariadb_repo_setup; yum clean all;
+   
+   - name: Install MariaDB 10.5 prior installing Plesk
+     yum:
+       name:
+         - MariaDB-server
+       state: present
+   
+   - name: Enable mariadb service
+     service:
+        name: mariadb
+        state: started
+        enabled: yes
+   
+   - name: Download one-click-installer
+     get_url: url=https://autoinstall.plesk.com/one-click-installer  dest=/root/one-click-installer mode=0755
+   
+   - name: Install Plesk
+     command: /root/one-click-installer --tier Stable 

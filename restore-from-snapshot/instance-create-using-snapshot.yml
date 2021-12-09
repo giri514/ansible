@@ -1,0 +1,201 @@
+- name: Create an instance
+  hosts: localhost
+  gather_facts: no
+  vars_prompt:
+   - name: Instancename
+     prompt: "Please enter the Instance Name"
+     private: no
+   - name: label
+     prompt: "Please enter the instance brand i.e. hostgrid or hostplus or sitecreator"
+     private: no
+   - name: machinetype
+     prompt: "Please enter the machine_type e.g. n1-standard-1 [1 vCPU and 3.75 GB], etc"
+     private: no
+   - name: size_gb_os
+     prompt: "Size in GB for OS disk"
+     private: no
+   - name: size_gb_customer
+     prompt: "Size in GB for customer data disk"
+     private: no
+   - name: region
+     prompt: "Please enter the Region"
+     private: no
+   - name: zone
+     prompt: "Please enter the Zone"
+     private: no
+   - name: SelfLinkOS
+     prompt: "Please enter the SelfLink for OS disk Snapshot"
+     private: no
+   - name: SelfLinkCU
+     prompt: "Please enter the SelfLink for customer data disk Snapshot"
+     private: no
+   - name: oldIP
+     prompt: "Please enter the Private IP of Old/crashed instance"
+     private: no
+
+  vars:
+      gcp_project: hp-ansible-automation-318010
+      gcp_cred_kind: serviceaccount
+      gcp_cred_file: /etc/ansible/auth.json
+      zone: '{{ zone }}'
+      region: '{{ region }}'
+      diskadd: -disk1
+      restored: -restored
+
+  tasks:
+
+   - name: create a OS disk
+     gcp_compute_disk:
+         name: "{{ Instancename }}{{ restored }}"
+         size_gb: '{{ size_gb_os }}'
+         source_snapshot:
+           selfLink: '{{ SelfLinkOS }}'
+         type: pd-ssd
+         zone: "{{ zone }}"
+         project: "{{ gcp_project }}"
+         auth_kind: "{{ gcp_cred_kind }}"
+         service_account_file: "{{ gcp_cred_file }}"
+         scopes:
+           - https://www.googleapis.com/auth/compute
+         state: present
+     register: disk
+
+   - name: create a customer data disk
+     gcp_compute_disk:
+         name: "{{ Instancename }}{{ diskadd }}{{ restored }}"
+         size_gb: '{{ size_gb_customer }}'
+         source_snapshot:
+           selfLink: '{{ SelfLinkCU }}'
+         type: pd-ssd
+         zone: "{{ zone }}"
+         project: "{{ gcp_project }}"
+         auth_kind: "{{ gcp_cred_kind }}"
+         service_account_file: "{{ gcp_cred_file }}"
+         scopes:
+           - https://www.googleapis.com/auth/compute
+         state: present
+     register: disk1
+
+   - name: create a address
+     gcp_compute_address:
+         name: '{{ Instancename }}'
+         region: "{{ region }}"
+         project: "{{ gcp_project }}"
+         auth_kind: "{{ gcp_cred_kind }}"
+         service_account_file: "{{ gcp_cred_file }}"
+         scopes:
+           - https://www.googleapis.com/auth/compute
+         state: present
+     register: address
+
+   - name: create a instance
+     gcp_compute_instance:
+         state: present
+         name: '{{ Instancename }}'
+         machine_type: '{{ machinetype }}'
+         deletion_protection: true
+         disks:
+           - auto_delete: true
+             boot: true
+             source: "{{ disk }}"
+           - auto_delete: true
+             source: "{{ disk1 }}"
+         labels:
+           brand: '{{ label }}'
+         network_interfaces:
+           - network: null # use default
+             access_configs:
+               - name: 'External NAT'
+                 nat_ip: "{{ address }}"
+                 type: 'ONE_TO_ONE_NAT'
+         zone: "{{ zone }}"
+         project: "{{ gcp_project }}"
+         auth_kind: "{{ gcp_cred_kind }}"
+         service_account_file: "{{ gcp_cred_file }}"
+         scopes:
+           - https://www.googleapis.com/auth/compute
+     register: instance
+   - name: Add tags to instance
+     gce_tag:
+         instance_name: '{{ Instancename }}'
+         tags: plesk-default-ports
+         zone: "{{ zone }}"
+         project_id: hp-ansible-automation-318010
+         service_account_email: ansible@hp-ansible-automation-318010.iam.gserviceaccount.com
+         pem_file: /etc/ansible/auth.json
+         state: present
+
+   - name: Wait for SSH to come up
+     wait_for: host={{ address.address }} port=22 delay=10 timeout=60
+
+   - name: Add host to groupname
+     add_host: hostname={{ address.address }} groupname=new_instances
+
+   - local_action: copy content="{{ oldIP }}" dest="/home/dipaks/oldIP.txt"
+
+- name: Manage new instances
+  hosts: new_instances
+  connection: ssh
+  become: True
+
+  tasks:
+
+   - name: Get Private IP of instance
+     command: 'curl -H "Metadata-Flavor: Google" http://metadata/computeMetadata/v1/instance/network-interfaces/0/ip'
+     register: internalip
+   - local_action: copy content="{{ internalip.stdout }}" dest="/home/dipaks/privateip.txt"
+
+   - name: Get Public IP of instance
+     command: 'curl -H "Metadata-Flavor: Google" http://metadata/computeMetadata/v1/instance/network-interfaces/0/access-configs/0/external-ip'
+     register: externalip
+   - local_action: copy content="{{ externalip.stdout }}" dest="/home/dipaks/publicip.txt"
+
+   - name: Copy IP switch bash script
+     copy:
+       src: ~/updatedomains.sh
+       dest: /home/dipaks
+
+- name: Manage new instances
+  hosts: new_instances
+  connection: ssh
+  become: True
+
+  vars:
+    publicip: "{{ lookup('file', '/home/dipaks/publicip.txt') }}"
+    privateip: "{{ lookup('file', '/home/dipaks/privateip.txt') }}"
+    oldIP: "{{ lookup('file', '/home/dipaks/oldIP.txt') }}"
+
+  tasks:
+
+    - name: Get list of all the domains
+      shell: plesk bin domain --list > /root/domains.txt
+
+    - name: Backup PSA database
+      shell: plesk db dump psa > /root/psa_backup.sql
+
+    - name: Perform IP re-read
+      shell: plesk  bin ipmanage --reread
+
+    - name: Change IP type to shared for new Private IP
+      shell: plesk bin ipmanage --update '{{ privateip }}' -type shared
+
+    - name: Nat the Private IP with Public IP
+      shell: plesk bin ipmanage -u "{{ privateip }}" -public_ip "{{ publicip }}"
+
+    - name: Add a new Private IP in the copied bash script
+      shell: sed -i 's/0.0.0.0/'{{ privateip }}'/g' /home/dipaks/updatedomains.sh
+
+    - name: Switch all the domains on new Private IP
+      shell: chmod +x /home/dipaks/updatedomains.sh; /bin/bash /home/dipaks/updatedomains.sh 
+      ignore_errors: true
+
+    - name: Remove old instance Private IP from the Plesk database
+      shell: plesk db "delete from IP_Addresses where ip_address='{{ oldIP }}'"
+      ignore_errors: true
+
+    - name: Repair web server configuration for all domains
+      shell: plesk repair web -domains-only
+
+    - name: Start nginx service
+      shell: service nginx start
+      ignore_errors: true

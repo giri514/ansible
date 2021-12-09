@@ -1,0 +1,344 @@
+- name: List of Available Hostnames/Instance Names
+  hosts: localhost
+  tasks:
+   - name: Please choose the instance name/hostname from the below list
+     debug: msg="{{item}}"
+     with_lines: cat /etc/ansible/plesk-provision-host/hostnames.txt
+
+- name: Create an instance
+  hosts: localhost
+  gather_facts: no
+  vars_prompt:
+   - name: Instancename
+     prompt: "Please enter the Instance Name/Hostname Prefix from above list"
+     private: no
+   - name: hostnamesuffix
+     prompt: "Please enter the suffix for hostname i.e. srv.hostgrid.com or srv.sitecreator.com or srv.hostplus.com"
+     private: no
+   - name: label
+     prompt: "Please enter the instance brand for instance labelling i.e. hostgrid or hostplus or sitecreator"
+     private: no
+   - name: machinetype
+     prompt: "Please enter the machine_type e.g. n1-standard-1 [1 vCPU and 3.75 GB], etc. You can check the types at https://cloud.google.com/compute/docs/machine-types"
+     private: no
+   - name: size_gb_os
+     prompt: "Size in GB for OS disk e.g 32 ro 64"
+     private: no
+   - name: size_gb_customer_data
+     prompt: "Size in GB for additional disk on which customer data will be stored e.g 256"
+     private: no
+   - name: pleskactivation
+     prompt: "Please Enter Plesk Activation Code"
+     private: no
+
+  vars:
+      gcp_project: hp-ansible-automation1-307012
+      gcp_cred_kind: serviceaccount
+      gcp_cred_file: /etc/ansible/auth.json
+      zone: "us-central1-b"
+      region: "us-central1"
+      diskadd: -disk1
+
+  tasks:
+   - name: create a disk
+     gcp_compute_disk:
+         name: '{{ Instancename }}'
+         size_gb: '{{ size_gb_os }}'
+         type: pd-ssd
+         source_image: 'projects/centos-cloud/global/images/centos-7-v20200910'
+         zone: "{{ zone }}"
+         project: "{{ gcp_project }}"
+         auth_kind: "{{ gcp_cred_kind }}"
+         service_account_file: "{{ gcp_cred_file }}"
+         scopes:
+           - https://www.googleapis.com/auth/compute
+         state: present
+     register: disk
+   - name: Create customer data disk
+     gcp_compute_disk:
+         name: "{{ Instancename }}{{ diskadd }}"
+         size_gb: '{{ size_gb_customer_data }}'
+         type: pd-ssd
+         zone: "{{ zone }}"
+         project: "{{ gcp_project }}"
+         auth_kind: "{{ gcp_cred_kind }}"
+         service_account_file: "{{ gcp_cred_file }}"
+         scopes:
+           - https://www.googleapis.com/auth/compute
+         state: present
+     register: disk1
+   - name: create a address
+     gcp_compute_address:
+         name: '{{ Instancename }}'
+         region: "{{ region }}"
+         project: "{{ gcp_project }}"
+         auth_kind: "{{ gcp_cred_kind }}"
+         service_account_file: "{{ gcp_cred_file }}"
+         scopes:
+           - https://www.googleapis.com/auth/compute
+         state: present
+     register: address
+   - name: create a instance
+     gcp_compute_instance:
+         state: present
+         name: '{{ Instancename }}'
+         machine_type: '{{ machinetype }}'
+         deletion_protection: true
+         disks:
+           - auto_delete: true
+             boot: true
+             source: "{{ disk }}"
+           - auto_delete: true
+             source: "{{ disk1 }}"
+         labels:
+           brand: '{{ label }}'
+         network_interfaces:
+           - network: null # use default
+             access_configs:
+               - name: 'External NAT'
+                 nat_ip: "{{ address }}"
+                 type: 'ONE_TO_ONE_NAT'
+         zone: "{{ zone }}"
+         project: "{{ gcp_project }}"
+         auth_kind: "{{ gcp_cred_kind }}"
+         service_account_file: "{{ gcp_cred_file }}"
+         scopes:
+           - https://www.googleapis.com/auth/compute
+     register: instance
+   - name: Add tags to instance
+     gce_tag:
+         instance_name: '{{ Instancename }}'
+         tags: plesk-default-ports
+         zone: "{{ zone }}"
+         project_id: hp-ansible-automation1-307012
+         service_account_email: ansible@hp-ansible-automation1-307012.iam.gserviceaccount.com
+         pem_file: /etc/ansible/auth.json
+         state: present
+
+   - name: Wait for SSH to come up
+     wait_for: host={{ address.address }} port=22 delay=10 timeout=60
+
+   - name: Add host to groupname
+     add_host: hostname={{ address.address }} groupname=new_instances
+
+   - local_action: copy content="{{ Instancename }}" dest="/home/dipaks/instancename.txt"
+   - local_action: copy content="{{ pleskactivation }}" dest="/home/dipaks/pleskactivation.txt"
+   - local_action: copy content="{{ hostnamesuffix }}" dest="/home/dipaks/hostnamesuffix.txt"
+   - local_action: copy content="{{ label }}" dest="/home/dipaks/label-brand.txt"
+
+- name: Manage new instances
+  hosts: new_instances
+  connection: ssh
+  become: True
+  roles:
+    - second-disk
+    - plesk-install
+    - plesk-configure
+    - yum-update
+    - zabbix-install
+  vars:
+    Instancename: "{{ lookup('file', '/home/dipaks/instancename.txt') }}"
+    pleskactivation: "{{ lookup('file', '/home/dipaks/pleskactivation.txt') }}"
+    hostnamesuffix: "{{ lookup('file', '/home/dipaks/hostnamesuffix.txt') }}"
+    label: "{{ lookup('file', '/home/dipaks/label-brand.txt') }}"
+
+  tasks:
+
+    - name: install git
+      yum:
+        name: git
+        state: latest
+
+    - name: Read-Write from git for HostGrid brand
+      git:
+        repo: https://dipaksalve13:b8e740c08d98c4a009c842ca6b9d89da2345534b@github.com/LucidCube/hostgrid-holding.git
+        dest: /home/dipaks/hostgrid-holding
+        update: yes
+      when: label == "hostgrid"
+
+    - name: Copy holding pages for HostGrid brand
+      copy:
+        src: /home/dipaks/hostgrid-holding/plesk/
+        dest: /var/www/vhosts/.skel/0/
+        remote_src: yes
+        force: yes
+      when: label == "hostgrid"
+
+    - name: Read-Write from git for hostplus brand
+      git:
+        repo: https://dipaksalve13:b8e740c08d98c4a009c842ca6b9d89da2345534b@github.com/LucidCube/hostplus-holding.git
+        dest: /home/dipaks/hostplus-holding
+        update: yes
+        version: '1.0.1'
+      when: label == "hostplus"
+
+    - name: Copy holding pages for Hostplus brand
+      copy:
+        src: /home/dipaks/hostplus-holding/plesk/
+        dest: /var/www/vhosts/.skel/0/
+        remote_src: yes
+        force: yes
+      when: label == "hostplus"
+
+    - name: Read-Write from git for Sitecreator
+      git:
+        repo: https://dipaksalve13:b8e740c08d98c4a009c842ca6b9d89da2345534b@github.com/LucidCube/sitecreator-holding.git
+        dest: /home/dipaks/sitecreator-holding
+        update: yes
+        version: '1.0.1'
+      when: label == "sitecreator"
+
+    - name: Copy holding pages for Sitecreator brand
+      copy:
+        src: /home/dipaks/sitecreator-holding/plesk/
+        dest: /var/www/vhosts/.skel/0/
+        remote_src: yes
+        force: yes
+      when: label == "sitecreator"
+
+    - name: Copy shell script to perfrom git pull for HostGrid Holdings
+      copy:
+        src: ~/update-hostgrid-holding.sh
+        dest: /home/dipaks
+      when: label == "hostgrid"
+
+    - name: Copy shell script to perfrom git pull for HostPlus Holdings
+      copy:
+        src: ~/update-hostplus-holding.sh
+        dest: /home/dipaks
+      when: label == "hostplus"
+
+    - name: Copy shell script to perform git pull for SiteCreator holdings
+      copy:
+        src: ~/update-sitecreator-holding.sh
+        dest: /home/dipaks
+      when: label == "sitecreator"
+
+    - name: Add cron for to pull HostGrid holdings at every hour
+      shell: chmod +x /home/dipaks/update-hostgrid-holding.sh; sed -i '$ a 0      *      *      *      *      /bin/sh /home/dipaks/update-hostgrid-holding.sh' /var/spool/cron/root; service crond restart;
+      when: label == "hostgrid"
+
+    - name: Add cron for to pull HostPlus holdings at every hour
+      shell: chmod +x /home/dipaks/update-hostplus-holding.sh; sed -i '$ a 0      *      *      *      *      /bin/sh /home/dipaks/update-hostplus-holding.sh' /var/spool/cron/root; service crond restart;
+      when: label == "hostplus"
+
+    - name: Add cron for to pull Sitecreator holdings at every hour
+      shell: chmod +x /home/dipaks/update-sitecreator-holding.sh; sed -i '$ a 0      *      *      *      *      /bin/sh /home/dipaks/update-sitecreator-holding.sh' /var/spool/cron/root; service crond restart;
+      when: label == "sitecreator"
+
+    - name: Change hostname
+      shell: hostnamectl set-hostname '{{ Instancename }}'.'{{ hostnamesuffix }}'
+
+    - name: Set hostname in Plesk
+      shell: plesk bin server_pref --update -hostname '{{ Instancename }}'.'{{ hostnamesuffix }}'
+
+    - name: Get hostname from /etc/hosts file
+      shell: cat /etc/hosts | awk '{if(NR==3) print $2}'
+      register: hosts
+
+    - name: Change hostname in /etc/hosts
+      shell: sed -i 's/'{{ hosts.stdout }}'/'{{ Instancename }}'.'{{ hostnamesuffix }}'/g' /etc/hosts
+
+    - name: Get hostname from /etc/hosts file
+      shell: cat /etc/hosts | awk '{if(NR==3) print $3}'
+      register: hosts1
+
+    - name: Change hostname in /etc/hosts
+      shell: sed -i 's/'{{ hosts1.stdout }}'/'{{ Instancename }}'/g' /etc/hosts
+
+    - name: Remove the used hostname from the list
+      local_action: command sed -i '/'{{ Instancename }}'/d' /etc/ansible/plesk-provision-host/hostnames.txt
+
+    - name: Get internal IP of instance
+      command: 'curl -H "Metadata-Flavor: Google" http://metadata/computeMetadata/v1/instance/network-interfaces/0/ip'
+      register: internalip
+
+    - name: Get external IP of instance
+      command: 'curl -H "Metadata-Flavor: Google" http://metadata/computeMetadata/v1/instance/network-interfaces/0/access-configs/0/external-ip'
+      register: externalip
+    - local_action: copy content="{{ externalip.stdout }}" dest="/home/dipaks/instanceip.txt"
+
+    - name: Copy site.pro licenseing API for HostGrid brand
+      copy:
+        src: ~/hostgrid-sitepro-api/
+        dest: /home/dipaks
+      when: label == "hostgrid"
+
+    - name: Copy site.pro licenseing API for HostPlus brand
+      copy:
+        src: ~/hostplus-sitepro-api/
+        dest: /home/dipaks
+      when: label == "hostplus"
+
+    - name: Copy site.pro licenseing API for SiteCreator brand
+      copy:
+        src: ~/sitecreator-sitepro-api/
+        dest: /home/dipaks
+      when: label == "sitecreator"
+
+    - name: Add instance IP in copied site.pro API for HostGrid brand
+      shell: sed -i 's/0.0.0.0/'{{ externalip.stdout }}'/g' /home/dipaks/hostgrid-sitepro-api.php
+      when: label == "hostgrid"
+
+    - name: Add instance IP in copied site.pro API for Hostplus brand
+      shell: sed -i 's/0.0.0.0/'{{ externalip.stdout }}'/g' /home/dipaks/hostplus-sitepro-api.php
+      when: label == "hostplus"
+
+    - name: Add instance IP in copied site.pro API for SiteCreator brand
+      shell: sed -i 's/0.0.0.0/'{{ externalip.stdout }}'/g' /home/dipaks/sitecreator-sitepro-api.php
+      when: label == "sitecreator"
+
+    - name: NAT IPs in Plesk
+      shell: plesk bin ipmanage -u "{{ internalip.stdout }}" -public_ip "{{ externalip.stdout }}"
+
+    - name: Install Plesk License via Activation code
+      shell: plesk bin license --install '{{ pleskactivation }}'
+      ignore_errors: true
+
+    - name: Copy Plesk branding image for sitecreator brand
+      copy:
+        src: ~/sitecreator.png
+        dest: /home/dipaks
+      when: label == "sitecreator"
+
+    - name: Copy Plesk branding image for hostplus brand
+      copy:
+        src: ~/hostplus.png
+        dest: /home/dipaks
+      when: label == "hostplus"
+
+    - name: Copy Plesk branding image for HostGrid brand
+      copy:
+        src: ~/hostgrid.png
+        dest: /home/dipaks
+      when: label == "hostgrid"
+
+    - name: Apply Plesk branding logo image for SiteCreator
+      shell: plesk bin branding --custom-logo -file /home/dipaks/sitecreator.png
+      when: label == "sitecreator"
+
+    - name: Apply Plesk branding logo image for HostPlus
+      shell: plesk bin branding --custom-logo -file /home/dipaks/hostplus.png
+      when: label == "hostplus"
+
+    - name: Apply Plesk branding logo image for HostGrid
+      shell: plesk bin branding --custom-logo -file /home/dipaks/hostgrid.png
+      when: label == "hostgrid"
+
+    - name: Change Title of Plesk pages for HostGrid brand
+      shell: plesk bin branding --custom-title 'HostGrid';
+      when: label == "hostgrid"
+
+    - name: Change Title of Plesk pages for hostplus brand
+      shell: plesk bin branding --custom-title 'HostPlus';
+      when: label == "hostplus"
+
+    - name: Change Title of Plesk pages for sitecreator brand
+      shell: plesk bin branding --custom-title 'SiteCreator';
+      when: label == "sitecreator"
+
+    - name: Disable Plesk Power User View
+      shell: plesk bin poweruser --off
+
+    - name: Reboot the machine after provisioning completed
+      reboot:

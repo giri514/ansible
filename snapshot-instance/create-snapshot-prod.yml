@@ -1,0 +1,38 @@
+- name: Get JSON credentials file from the Secret Name
+  hosts: localhost
+  tasks:
+
+   - name: Get contents from secret
+     local_action: shell gcloud secrets versions access latest --secret=ansible-hp-cst-srv --format='get(payload.data)' | tr '_-' '/+' | base64 -d > /home/ansible/hostplus-cst-srv.json
+
+- name: Create Snapshots of the instance disks
+  hosts: localhost
+  gather_facts: no
+  
+  vars_prompt:
+   - name: Instancename
+     prompt: "Please enter the instance name for which you wish to create snapshots"
+     private: no
+
+  vars:
+      gcp_project: hostplus-cst-srv
+      gcp_cred_kind: serviceaccount
+      gcp_cred_file: /home/ansible/hostplus-cst-srv.json
+
+  tasks:
+
+   - name: Check date and use it as snapshot suffix
+     local_action: command date +"%d-%m-%y"
+     register: date
+
+   - name: Create gce snapshot
+     community.google.gce_snapshot:
+       instance_name: "{{ Instancename }}"
+       snapshot_name: "{{ Instancename }}-{{ date.stdout }}"
+       state: present
+       service_account_email: ansible@hostplus-cst-srv.iam.gserviceaccount.com
+       credentials_file: "{{ gcp_cred_file }}"
+       project_id: "{{ gcp_project }}"
+
+ #  - name: Remove temporary JSON credential file
+ #     local_action: shell rm -f /home/ansible/hostplus-cst-srv.json

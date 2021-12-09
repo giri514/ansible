@@ -1,0 +1,23 @@
+- name: Create an instance
+  hosts: localhost
+  vars_prompt:
+   - name: Instancename
+     prompt: "Please enter the Instance Name/Hostname Prefix from above list"
+     private: no
+	
+
+- name: Create an instance
+  hosts: elderbe5645645
+  connection: ssh
+  become: true
+
+  tasks:
+   - name: Create subscription
+     shell: plesk bin subscription --create '{{ Instancename }}'.srvtest.hostgrid.com -owner admin -service-plan "Default Domain" -ip 10.128.0.11  -login updatime  -passwd "werewr45435@#WE"
+
+   - name: Create index.php
+     shell:  mv /var/www/vhosts/example.com/httpdocs/index.php /var/www/vhosts/example.com/httpdocs/index.php-bk
+
+   - name: Create wp-toolkit
+     shell: plesk ext wp-toolkit --install -domain-name example.com -path
+

@@ -1,0 +1,13 @@
+- name: Create an instance
+  hosts: merida
+  connection: ssh
+  become: true
+
+  tasks:
+
+   - name: Wait for 30 seconds
+     pause:
+        seconds: 30
+
+   - name: Install Imunify360 plugin on cPanel
+     shell: yum clean all; wget https://repo.imunify360.cloudlinux.com/defence360/i360deploy.sh; chmod +x i360deploy.sh; /bin/sh i360deploy.sh;
